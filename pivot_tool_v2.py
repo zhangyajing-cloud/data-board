@@ -1,4 +1,5 @@
 import io
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -8,12 +9,31 @@ import streamlit as st
 st.set_page_config(
     page_title="短剧/漫剧综合数据看板",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown(
     """
     <style>
+    /* 标题字号全局调小，版面紧凑精干 */
+    h1 {
+        font-size: 22px !important;
+        margin-bottom: 10px !important;
+    }
+    h2, .stHeader {
+        font-size: 18px !important;
+        margin-top: 14px !important;
+        margin-bottom: 8px !important;
+    }
+    h3, .stSubheader {
+        font-size: 16px !important;
+        margin-top: 10px !important;
+        margin-bottom: 6px !important;
+    }
+    h4, h5 {
+        font-size: 14px !important;
+    }
+
     /* 全局样式与自定义表格样式 */
     .dataframe-table, .custom-pivot-table {
         width: 100%;
@@ -35,7 +55,8 @@ st.markdown(
         border: 1px solid #DEE2E6;
         vertical-align: middle;
     }
-    /* 高亮背景规范 */
+
+    /* 汇总行背景色硬性保留 */
     .row-total {
         background-color: #FFE066 !important; /* 大盘总计/全局汇总 暖黄色 */
         font-weight: bold;
@@ -47,36 +68,114 @@ st.markdown(
     .col-highlight-yellow {
         background-color: #FFF9C4 !important; /* 关键维度列 浅黄色 */
     }
-    .cell-highlight-green {
-        background-color: #D4EDDA !important; /* 达标率 >= 85% 淡绿色 */
-        color: #155724;
-        font-weight: bold;
+
+    /* 达标率（>80% / >85%）文本与背景样式分类定义 */
+    .summary-d0-85 {
+        color: #28A745 !important;
+        font-weight: bold !important;
+        text-decoration: underline !important;
     }
-    .cell-highlight-pink {
-        background-color: #F8D7DA !important;
-        color: #721C24;
+    .summary-d0-80 {
+        color: #28A745 !important;
+        font-weight: bold !important;
     }
-    .text-green-bold {
-        color: #28A745;
-        font-weight: bold;
+
+    .detail-d0-85 {
+        background-color: #D4EDDA !important; /* 淡绿色背景 */
+        color: #28A745 !important;
+        font-weight: bold !important;
     }
-    .row-muted {
-        color: #6C757D;
+    .detail-d0-80 {
+        color: #28A745 !important;
+        font-weight: bold !important;
     }
-    .col-trend {
+
+    /* 侧边栏多选标签 (Tags) 红色卡片视觉重构 */
+    [data-testid="stSidebar"] [data-baseweb="select"] {
+        max-height: 160px;
+        overflow-y: auto;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tag"] {
+        background-color: #FF4D4F !important;
+        color: #FFFFFF !important;
+        margin: 2px;
+        border-radius: 4px;
+        font-weight: 500;
         font-size: 12px;
-        color: #555555;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tag"] span {
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tag"] svg {
+        fill: #FFFFFF !important;
+    }
+
+    /* 预警标签颜色 */
+    .badge-warn-a {
+        background-color: #FF4D4F;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 12px;
+    }
+    .badge-warn-b {
+        background-color: #FA8C16;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 12px;
+    }
+    .badge-warn-c {
+        background-color: #FADB14;
+        color: #333;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 12px;
     }
     
-    /* 十字高亮 (Crosshair Read Mode) CSS 支持 */
-    .crosshair-focus {
-        background-color: #FFE8A1 !important;
+    /* 策略总结卡片容器美化 */
+    .strategy-box {
+        background-color: #F6FFED;
+        border: 1px solid #B7EB8F;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+        font-size: 13px;
+        line-height: 1.6;
     }
-    .crosshair-row {
-        background-color: #F1F3F5;
+    .strategy-box-title {
+        font-weight: bold;
+        color: #52C41A;
+        font-size: 14px;
+        margin-bottom: 6px;
     }
-    .crosshair-col {
-        background-color: #F1F3F5;
+
+    /* 素材复制卡片UI美化 */
+    .material-copy-card {
+        background-color: #F0F5FF;
+        border: 1px solid #ADC6FF;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 16px;
+    }
+    .material-header-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: #1D39C4;
+        margin-bottom: 8px;
+    }
+    
+    /* 顶部 6 大 Sheet 选项卡样式强化 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-weight: bold;
+        padding: 8px 16px;
     }
     </style>
     """,
@@ -86,11 +185,101 @@ st.markdown(
 st.title("🎬 短剧/漫剧综合数据看板")
 
 # -----------------------------------------------------------------------------
-# 2. Excel 文件读取与数据预处理
+# 核心缓存与帮助函数定义
 # -----------------------------------------------------------------------------
-uploaded_file = st.file_uploader(
-    "📂 请上传数据底表 (.xlsx / .xls)", type=["xlsx", "xls"]
-)
+@st.cache_data(ttl=3600)
+def get_cached_filter_options(df):
+    target_col = "推广目标（属性）" if "推广目标（属性）" in df.columns else "推广目标"
+    type_col = "书籍类型" if "书籍类型" in df.columns else "漫剧类型"
+    
+    return {
+        "dramas": sorted(
+            df["剧目/书籍短ID"].dropna().astype(str).unique().tolist()
+        ),
+        "accounts": sorted(
+            df["投放账户名称"].dropna().astype(str).unique().tolist()
+        ),
+        "opts": sorted(
+            [o for o in df["优化师"].dropna().unique() if o != "-"]
+        ),
+        "langs": sorted(
+            df["剧目/书籍语言"].dropna().unique().tolist()
+        ) if "剧目/书籍语言" in df.columns else [],
+        "copyrights": sorted(
+            df["版权来源"].dropna().unique().tolist()
+        ) if "版权来源" in df.columns else [],
+        "comic_types": sorted(
+            df["漫剧类型"].dropna().unique().tolist()
+        ) if "漫剧类型" in df.columns else [],
+        "platforms": sorted(df["投放平台"].dropna().unique().tolist()),
+        "targets": sorted(
+            df[target_col].dropna().unique().tolist()
+        ) if target_col in df.columns else [],
+        "opt_modes": sorted(
+            df["优化方式"].dropna().unique().tolist()
+        ) if "优化方式" in df.columns else [],
+        "pixels": sorted(
+            df["pixel名称"].dropna().astype(str).unique().tolist()
+        ),
+        "types": sorted(
+            df[type_col].dropna().unique().tolist()
+        ) if type_col in df.columns else [],
+    }
+
+
+@st.cache_data
+def apply_fast_filter(
+    df,
+    sel_dramas,
+    sel_accounts,
+    sel_opts,
+    sel_langs,
+    sel_copyrights,
+    sel_comic_types,
+    sel_platforms,
+    sel_targets,
+    sel_opt_modes,
+    sel_pixels,
+    sel_types,
+    start_date,
+    end_date,
+):
+    mask = np.ones(len(df), dtype=bool)
+
+    if sel_dramas:
+        mask &= df["剧目/书籍短ID"].astype(str).isin(sel_dramas).values
+    if sel_accounts:
+        mask &= df["投放账户名称"].isin(sel_accounts).values
+    if sel_opts:
+        mask &= df["优化师"].isin(sel_opts).values
+    if sel_langs and "剧目/书籍语言" in df.columns:
+        mask &= df["剧目/书籍语言"].isin(sel_langs).values
+    if sel_copyrights and "版权来源" in df.columns:
+        mask &= df["版权来源"].isin(sel_copyrights).values
+    if sel_comic_types and "漫剧类型" in df.columns:
+        mask &= df["漫剧类型"].isin(sel_comic_types).values
+    if sel_platforms:
+        mask &= df["投放平台"].isin(sel_platforms).values
+
+    target_col = "推广目标（属性）" if "推广目标（属性）" in df.columns else "推广目标"
+    if sel_targets and target_col in df.columns:
+        mask &= df[target_col].isin(sel_targets).values
+
+    if sel_opt_modes and "优化方式" in df.columns:
+        mask &= df["优化方式"].isin(sel_opt_modes).values
+    if sel_pixels:
+        mask &= df["pixel名称"].isin(sel_pixels).values
+
+    type_col = "书籍类型" if "书籍类型" in df.columns else "漫剧类型"
+    if sel_types and type_col in df.columns:
+        mask &= df[type_col].isin(sel_types).values
+
+    if start_date and end_date and "日期_dt" in df.columns:
+        s_date = pd.to_datetime(start_date)
+        e_date = pd.to_datetime(end_date)
+        mask &= ((df["日期_dt"] >= s_date) & (df["日期_dt"] <= e_date)).values
+
+    return df[mask]
 
 
 def clean_num(val):
@@ -102,29 +291,105 @@ def clean_num(val):
         return 0.0
 
 
-def get_trend_str(curr, prev, is_cost=False):
-    if pd.isna(prev) or prev == 0:
-        return "-"
-    diff = curr - prev
-    if is_cost:
-        if diff > 0:
-            return f"+{abs(diff):.2f} ↓"
-        return "$0.00"
-    else:
-        pct = (diff / prev) * 100
-        if pct > 0:
-            return f"+{pct:.2f}% ↑"
-        elif pct < 0:
-            return f"{pct:.2f}% ↓"
+def format_pct(val):
+    """百分比格式化修复函数: 自动转化 0.83 -> 83.00%"""
+    if pd.isna(val) or val == "-" or val == "":
         return "0.00%"
+    try:
+        num = float(val)
+        if num <= 1.0 and num >= 0.0:
+            return f"{num * 100:.2f}%"
+        return f"{num:.2f}%"
+    except:
+        return f"{val}"
+
+
+def compute_metrics(sub_df):
+    """通用透视与计算规范（精准加权公式）"""
+    c_cost = sub_df["花费"].sum()
+
+    sum_d0_target = sub_df["D0目标收入"].sum() if "D0目标收入" in sub_df.columns else 0
+    sum_d0_rev = sub_df["d0_revenue"].sum() if "d0_revenue" in sub_df.columns else 0
+    if sum_d0_target > 0:
+        d0_reach = sum_d0_rev / sum_d0_target
+    else:
+        d0_reach = (sub_df["D0达标率"] * sub_df["花费"]).sum() / (c_cost or 1)
+
+    d0_roas = (sub_df["d0_roas"] * sub_df["花费"]).sum() / (c_cost or 1)
+
+    sum_active = (
+        sub_df["首日激活用户数"].sum()
+        if "首日激活用户数" in sub_df.columns
+        else 0
+    )
+    if sum_active > 0:
+        cpi = c_cost / sum_active
+    else:
+        cpi = (sub_df["CPI"] * sub_df["花费"]).sum() / (c_cost or 1)
+
+    sum_pay_users = (
+        sub_df["首日付费用户数"].sum()
+        if "首日付费用户数" in sub_df.columns
+        else 0
+    )
+    if sum_pay_users > 0:
+        cpp = c_cost / sum_pay_users
+    else:
+        cpp = (sub_df["首日付费用户成本"] * sub_df["花费"]).sum() / (
+            c_cost or 1
+        )
+
+    if sum_active > 0 and sum_pay_users > 0:
+        pay_rate = sum_pay_users / sum_active
+    else:
+        pay_rate = (sub_df["首日付费率"] * sub_df["花费"]).sum() / (c_cost or 1)
+
+    arppu = (
+        sub_df["Arppu- 付费用户人均付费金额"] * sub_df["花费"]
+    ).sum() / (c_cost or 1)
+
+    if sum_active > 0:
+        new_reg_count = (
+            sub_df["首日激活用户数"] * sub_df["新注册用户占比"]
+        ).sum()
+        reg_ratio = new_reg_count / sum_active
+    else:
+        reg_ratio = (sub_df["新注册用户占比"] * sub_df["花费"]).sum() / (
+            c_cost or 1
+        )
+
+    if sum_pay_users > 0:
+        new_pay_count = (
+            sub_df["首日付费用户数"] * sub_df["付费用户新注册用户占比"]
+        ).sum()
+        pay_reg_ratio = new_pay_count / sum_pay_users
+    else:
+        pay_reg_ratio = (
+            sub_df["付费用户新注册用户占比"] * sub_df["花费"]
+        ).sum() / (c_cost or 1)
+
+    return {
+        "花费": c_cost,
+        "达标率": d0_reach,
+        "D0 ROAS": d0_roas,
+        "CPI": cpi,
+        "首日付费率": pay_rate,
+        "CPP": cpp,
+        "ARPPU": arppu,
+        "新注册用户占比": reg_ratio,
+        "付费用户新注册用户占比": pay_reg_ratio,
+        "首日激活用户数": sum_active,
+        "首日付费用户数": sum_pay_users,
+    }
 
 
 def generate_pivot_html(
     df_data, dims, metric_cols, total_title="大盘总计 / 全局汇总"
 ):
-    """通用透视表生成算法：支持多级维度跨行合并 (rowspan)，严格按花费降序"""
-    if df_data.empty:
-        return "<p>无符合条件的数据</p>"
+    dims = [d for d in dims if d in df_data.columns]
+    if not dims or df_data.empty:
+        return "<p style='color:#666;'>无符合条件的数据或维度字段缺失</p>"
+
     total_cost = df_data["花费"].sum()
 
     def build_tree(data_subset, dim_index):
@@ -150,34 +415,7 @@ def generate_pivot_html(
             }
 
             if dim_index == len(dims) - 1:
-                node["leaf_data"] = {
-                    "花费": c_cost,
-                    "达标率": (sub_df["D0达标率"] * sub_df["花费"]).sum()
-                    / (c_cost or 1),
-                    "D0 ROAS": (sub_df["d0_roas"] * sub_df["花费"]).sum()
-                    / (c_cost or 1),
-                    "CPI": (sub_df["CPI"] * sub_df["花费"]).sum()
-                    / (c_cost or 1),
-                    "首日付费率": (
-                        sub_df["首日付费率"] * sub_df["花费"]
-                    ).sum()
-                    / (c_cost or 1),
-                    "CPP": (sub_df["首日付费用户成本"] * sub_df["花费"]).sum()
-                    / (c_cost or 1),
-                    "ARPPU": (
-                        sub_df["Arppu- 付费用户人均付费金额"]
-                        * sub_df["花费"]
-                    ).sum()
-                    / (c_cost or 1),
-                    "新注册用户占比": (
-                        sub_df["新注册用户占比"] * sub_df["花费"]
-                    ).sum()
-                    / (c_cost or 1),
-                    "付费用户新注册用户占比": (
-                        sub_df["付费用户新注册用户占比"] * sub_df["花费"]
-                    ).sum()
-                    / (c_cost or 1),
-                }
+                node["leaf_data"] = compute_metrics(sub_df)
                 node["rowspan"] = 1
             else:
                 children = build_tree(sub_df, dim_index + 1)
@@ -214,28 +452,15 @@ def generate_pivot_html(
         html += f"<th>{mc}</th>"
     html += "</tr></thead><tbody>"
 
-    # 大盘总计行 (#FFE066)
+    # 大盘总计行
     if total_cost > 0:
-        d0_tot = (df_data["D0达标率"] * df_data["花费"]).sum() / total_cost
-        roas_tot = (df_data["d0_roas"] * df_data["花费"]).sum() / total_cost
-        cpi_tot = (df_data["CPI"] * df_data["花费"]).sum() / total_cost
-        pay_tot = (df_data["首日付费率"] * df_data["花费"]).sum() / total_cost
-        cpp_tot = (
-            df_data["首日付费用户成本"] * df_data["花费"]
-        ).sum() / total_cost
-        arppu_tot = (
-            df_data["Arppu- 付费用户人均付费金额"] * df_data["花费"]
-        ).sum() / total_cost
-        reg_tot = (
-            df_data["新注册用户占比"] * df_data["花费"]
-        ).sum() / total_cost
-        preg_tot = (
-            df_data["付费用户新注册用户占比"] * df_data["花费"]
-        ).sum() / total_cost
-
-        d0_cell = (
-            'class="cell-highlight-green"' if d0_tot >= 0.85 else ""
-        )
+        tot_m = compute_metrics(df_data)
+        if tot_m["达标率"] >= 0.85:
+            d0_cell = 'class="summary-d0-85"'
+        elif tot_m["达标率"] >= 0.80:
+            d0_cell = 'class="summary-d0-80"'
+        else:
+            d0_cell = ""
 
         html += f'<tr class="row-total"><td colspan="{len(dims)}">{total_title}</td>'
         for mc in metric_cols:
@@ -244,33 +469,39 @@ def generate_pivot_html(
             elif mc in ["花费占比 (%)", "消耗占比 (%)"]:
                 html += "<td>100.00%</td>"
             elif mc in ["达标率 (%)", "D0 达标率 (%)"]:
-                html += f"<td {d0_cell}>{d0_tot*100:.2f}%</td>"
+                html += f"<td {d0_cell}>{format_pct(tot_m['达标率'])}</td>"
             elif mc in ["D0 ROAS (%)", "ROAS (%)"]:
-                html += f"<td>{roas_tot*100:.2f}%</td>"
+                html += f"<td>{format_pct(tot_m['D0 ROAS'])}</td>"
             elif mc == "CPI ($)":
-                html += f"<td>${cpi_tot:.2f}</td>"
+                html += f"<td>${tot_m['CPI']:.2f}</td>"
             elif mc == "首日付费率 (%)":
-                html += f"<td>{pay_tot*100:.2f}%</td>"
+                html += f"<td>{format_pct(tot_m['首日付费率'])}</td>"
             elif mc == "CPP ($)":
-                html += f"<td>${cpp_tot:.2f}</td>"
+                html += f"<td>${tot_m['CPP']:.2f}</td>"
             elif mc == "ARPPU ($)":
-                html += f"<td>${arppu_tot:.2f}</td>"
+                html += f"<td>${tot_m['ARPPU']:.2f}</td>"
             elif mc in ["新注册用户占比 (%)", "注册拉新占比 (%)"]:
-                html += f"<td>{reg_tot*100:.2f}%</td>"
+                html += f"<td>{format_pct(tot_m['新注册用户占比'])}</td>"
             elif mc in ["付费用户新注册用户占比 (%)", "付费拉新占比 (%)"]:
-                html += f"<td>{preg_tot*100:.2f}%</td>"
+                html += f"<td>{format_pct(tot_m['付费用户新注册用户占比'])}</td>"
+            elif mc == "首日激活用户数":
+                html += f"<td>{int(tot_m['首日激活用户数']):,}</td>"
+            elif mc == "首日付费用户数":
+                html += f"<td>{int(tot_m['首日付费用户数']):,}</td>"
         html += "</tr>"
 
     rendered_dims_counts = [0] * len(dims)
 
-    # 需要高亮的前几个维度名称定义
     yellow_dims = [
-        "优化师",
         "剧目/书籍语言",
+        "优化师",
         "剧目/书籍名称",
         "剧目/书籍短ID",
         "投放平台",
+        "账户时区",
         "操作系统 (广告)",
+        "素材名称",
+        "推广目标",
     ]
 
     for row_idx, r in enumerate(flat_rows):
@@ -295,9 +526,14 @@ def generate_pivot_html(
 
         m = r["metrics"]
         d0_val = m["达标率"]
-        d0_cell = (
-            'class="cell-highlight-green"' if d0_val >= 0.85 else ""
-        )
+
+        if d0_val >= 0.85:
+            d0_cell = 'class="detail-d0-85"'
+        elif d0_val >= 0.80:
+            d0_cell = 'class="detail-d0-80"'
+        else:
+            d0_cell = ""
+
         cost_ratio = (m["花费"] / total_cost * 100) if total_cost > 0 else 0
 
         for mc in metric_cols:
@@ -306,21 +542,25 @@ def generate_pivot_html(
             elif mc in ["花费占比 (%)", "消耗占比 (%)"]:
                 html += f"<td>{cost_ratio:.2f}%</td>"
             elif mc in ["达标率 (%)", "D0 达标率 (%)"]:
-                html += f"<td {d0_cell}>{d0_val*100:.2f}%</td>"
+                html += f"<td {d0_cell}>{format_pct(d0_val)}</td>"
             elif mc in ["D0 ROAS (%)", "ROAS (%)"]:
-                html += f"<td>{m['D0 ROAS']*100:.2f}%</td>"
+                html += f"<td>{format_pct(m['D0 ROAS'])}</td>"
             elif mc == "CPI ($)":
                 html += f"<td>${m['CPI']:.2f}</td>"
             elif mc == "首日付费率 (%)":
-                html += f"<td>{m['首日付费率']*100:.2f}%</td>"
+                html += f"<td>{format_pct(m['首日付费率'])}</td>"
             elif mc == "CPP ($)":
                 html += f"<td>${m['CPP']:.2f}</td>"
             elif mc == "ARPPU ($)":
                 html += f"<td>${m['ARPPU']:.2f}</td>"
             elif mc in ["新注册用户占比 (%)", "注册拉新占比 (%)"]:
-                html += f"<td>{m['新注册用户占比']*100:.2f}%</td>"
+                html += f"<td>{format_pct(m['新注册用户占比'])}</td>"
             elif mc in ["付费用户新注册用户占比 (%)", "付费拉新占比 (%)"]:
-                html += f"<td>{m['付费用户新注册用户占比']*100:.2f}%</td>"
+                html += f"<td>{format_pct(m['付费用户新注册用户占比'])}</td>"
+            elif mc == "首日激活用户数":
+                html += f"<td>{int(m['首日激活用户数']):,}</td>"
+            elif mc == "首日付费用户数":
+                html += f"<td>{int(m['首日付费用户数']):,}</td>"
             elif mc == "手动出价的金额/系数":
                 bid_val = (
                     df_data[
@@ -338,21 +578,65 @@ def generate_pivot_html(
     return html
 
 
+# -----------------------------------------------------------------------------
+# 2. Excel 文件读取与数据预处理
+# -----------------------------------------------------------------------------
+uploaded_file = st.file_uploader(
+    "📂 请上传数据底表 (.xlsx / .xls)", type=["xlsx", "xls"]
+)
+
 if uploaded_file is not None:
     raw_df = pd.read_excel(uploaded_file)
 
-    # 1. 全局过滤零花费数据 (Cost > 0)
+    required_defaults = {
+        "优化师": "-",
+        "花费": 0.0,
+        "剧目/书籍语言": "未知语种",
+        "剧目/书籍名称": "未知剧目",
+        "剧目/书籍中文名称": "-",
+        "剧目/书籍短ID": "-",
+        "版权来源": "-",
+        "pixel名称": "-",
+        "优化方式": "-",
+        "操作系统 (广告)": "-",
+        "操作系统 (用户)": "-",
+        "投放平台": "-",
+        "推广目标": "-",
+        "推广目标（属性）": "-",
+        "广告类型": "-",
+        "书籍类型": "未知类型",
+        "漫剧类型": "未知类型",
+        "首次投放的日期": "2020-01-01",
+        "投放账户名称": "-",
+        "广告创建时间": "2020-01-01",
+        "素材名称": "-",
+        "D0达标率": 0.0,
+        "d0_roas": 0.0,
+        "CPI": 0.0,
+        "首日付费率": 0.0,
+        "首日付费用户成本": 0.0,
+        "Arppu- 付费用户人均付费金额": 0.0,
+        "新注册用户占比": 0.0,
+        "付费用户新注册用户占比": 0.0,
+        "D0目标收入": 0.0,
+        "d0_revenue": 0.0,
+        "首日激活用户数": 0.0,
+        "首日付费用户数": 0.0,
+    }
+    for col_name, default_val in required_defaults.items():
+        if col_name not in raw_df.columns:
+            raw_df[col_name] = default_val
+
     df = raw_df[(raw_df["优化师"] != "-") & (raw_df["花费"] > 0)].copy()
 
-    # 2. 日期转换与处理
-    df["日期_str"] = pd.to_datetime(df["日期"]).dt.strftime("%Y-%m-%d")
+    df["日期_dt"] = pd.to_datetime(df["日期"])
+    df["日期_str"] = df["日期_dt"].dt.strftime("%Y-%m-%d")
     df["首次投放_str"] = pd.to_datetime(df["首次投放的日期"]).dt.strftime(
         "%Y-%m-%d"
     )
 
     all_dates = sorted(df["日期_str"].unique(), reverse=True)
     latest_date = all_dates[0] if len(all_dates) > 0 else ""
-    prev_date = all_dates[1] if len(all_dates) > 1 else ""
 
     num_cols = [
         "花费",
@@ -364,6 +648,10 @@ if uploaded_file is not None:
         "Arppu- 付费用户人均付费金额",
         "新注册用户占比",
         "付费用户新注册用户占比",
+        "D0目标收入",
+        "d0_revenue",
+        "首日激活用户数",
+        "首日付费用户数",
     ]
     for c in num_cols:
         if c in df.columns:
@@ -377,94 +665,118 @@ if uploaded_file is not None:
             return "0 时区账户"
         return "美西账户"
 
-    df["账户时区分类"] = df["投放账户名称"].apply(get_timezone)
+    df["账户时区"] = df["投放账户名称"].apply(get_timezone)
 
     # -------------------------------------------------------------------------
-    # 三、 控制栏组件重构 (8大筛选 + 新增【💡 阅读模式开关】)
+    # 侧边栏切片筛选面板
     # -------------------------------------------------------------------------
-    st.markdown("### 🌐 控制栏")
+    options = get_cached_filter_options(df)
+    min_date = df["日期_dt"].min().date()
+    max_date = df["日期_dt"].max().date()
+    first_launch_date = df["首次投放的日期"].min() if "首次投放的日期" in df.columns else latest_date
 
-    r1_1, r1_2, r1_3 = st.columns([1, 2, 1])
-    with r1_1:
-        lang_tab = st.selectbox(
-            "快捷语种切换：",
-            options=["🌐 全部地区/双语种", "🇹🇼 繁体中文", "🇰🇷 韩语"],
-            index=0,
-        )
+    with st.sidebar:
+        st.header("🎛️ 多维切片筛选")
 
-    if lang_tab == "🇹🇼 繁体中文":
-        df = df[df["剧目/书籍语言"] == "繁体中文"]
-    elif lang_tab == "🇰🇷 韩语":
-        df = df[df["剧目/书籍语言"] == "韩语"]
+        with st.form("sidebar_filter_form"):
+            submit_btn = st.form_submit_button(
+                "🚀 一键应用筛选", use_container_width=True
+            )
 
-    with r1_2:
-        selected_opt = st.multiselect(
-            "选择优化师 (`优化师`):",
-            options=sorted(df["优化师"].dropna().unique().tolist()),
-            default=sorted(df["优化师"].dropna().unique().tolist()),
-        )
+            st.markdown("---")
 
-    # 阅读模式（十字高亮）开关键
-    with r1_3:
-        enable_read_mode = st.toggle(
-            "💡 开启/关闭阅读模式 (十字高亮)", value=True
-        )
+            sel_dramas = st.multiselect(
+                "🔍 搜索/筛选 推广剧目/书籍短ID",
+                options=options["dramas"],
+                default=options["dramas"],
+                placeholder="输入或选择短ID (留空代表全选)",
+            )
 
-    r2_1, r2_2, r2_3 = st.columns(3)
-    with r2_1:
-        selected_shows = st.multiselect(
-            "选择剧目名称 (`剧目/书籍名称`):",
-            options=sorted(df["剧目/书籍名称"].dropna().unique().tolist()),
-            default=sorted(df["剧目/书籍名称"].dropna().unique().tolist()),
-        )
-        selected_ids = st.multiselect(
-            "选择剧目ID (`剧目/书籍短ID`):",
-            options=sorted(
-                df["剧目/书籍短ID"].dropna().astype(str).unique().tolist()
-            ),
-            default=sorted(
-                df["剧目/书籍短ID"].dropna().astype(str).unique().tolist()
-            ),
-        )
+            st.markdown("##### 📅 投放时间筛选")
+            st.caption(f"💡 首投起始日: {first_launch_date}")
+            date_range = st.date_input(
+                "选择时间范围 (从首投日开始)",
+                value=[min_date, max_date],
+            )
 
-    with r2_2:
-        selected_sources = st.multiselect(
-            "选择版权来源 (`版权来源`):",
-            options=sorted(df["版权来源"].dropna().unique().tolist()),
-            default=sorted(df["版权来源"].dropna().unique().tolist()),
-        )
-        selected_pixels = st.multiselect(
-            "选择Pixel名称 (`pixel名称`):",
-            options=sorted(df["pixel名称"].dropna().unique().tolist()),
-            default=sorted(df["pixel名称"].dropna().unique().tolist()),
-        )
+            st.markdown("---")
 
-    with r2_3:
-        selected_opt_methods = st.multiselect(
-            "选择优化方式 (`优化方式`):",
-            options=sorted(df["优化方式"].dropna().unique().tolist()),
-            default=sorted(df["优化方式"].dropna().unique().tolist()),
-        )
-        selected_os = st.multiselect(
-            "选择OS操作系统 (`操作系统 (广告)`):",
-            options=sorted(df["操作系统 (广告)"].dropna().unique().tolist()),
-            default=sorted(df["操作系统 (广告)"].dropna().unique().tolist()),
-        )
+            sel_accounts = st.multiselect(
+                "筛选 投放账户名称",
+                options=options["accounts"],
+                default=options["accounts"],
+            )
+            sel_opts = st.multiselect(
+                "筛选 优化师",
+                options=options["opts"],
+                default=options["opts"],
+            )
+            sel_langs = st.multiselect(
+                "筛选 剧目/书籍语言",
+                options=options["langs"],
+                default=options["langs"],
+            )
+            sel_copyrights = st.multiselect(
+                "筛选 版权来源",
+                options=options["copyrights"],
+                default=options["copyrights"],
+            )
+            sel_comic_types = st.multiselect(
+                "筛选 漫剧类型",
+                options=options["comic_types"],
+                default=options["comic_types"],
+            )
+            sel_platforms = st.multiselect(
+                "筛选 投放平台",
+                options=options["platforms"],
+                default=options["platforms"],
+            )
+            sel_targets = st.multiselect(
+                "筛选 推广目标",
+                options=options["targets"],
+                default=options["targets"],
+            )
+            sel_opt_modes = st.multiselect(
+                "筛选 优化方式",
+                options=options["opt_modes"],
+                default=options["opt_modes"],
+            )
+            sel_pixels = st.multiselect(
+                "筛选 pixel名称",
+                options=options["pixels"],
+                default=options["pixels"],
+            )
+            sel_types = st.multiselect(
+                "筛选 书籍类型",
+                options=options["types"],
+                default=options["types"],
+            )
 
-    df["剧目/书籍短ID_str"] = df["剧目/书籍短ID"].astype(str)
-    df_filtered = df[
-        (df["优化师"].isin(selected_opt))
-        & (df["剧目/书籍名称"].isin(selected_shows))
-        & (df["剧目/书籍短ID_str"].isin(selected_ids))
-        & (df["版权来源"].isin(selected_sources))
-        & (df["pixel名称"].isin(selected_pixels))
-        & (df["优化方式"].isin(selected_opt_methods))
-        & (df["操作系统 (广告)"].isin(selected_os))
-    ].copy()
+            enable_read_mode = st.toggle(
+                "💡 开启/关闭阅读模式 (十字高亮)", value=True
+            )
 
-    # -------------------------------------------------------------------------
-    # 注入阅读模式 (Crosshair Reading Mode) 前端 JS
-    # -------------------------------------------------------------------------
+    start_d = date_range[0] if len(date_range) > 0 else min_date
+    end_d = date_range[1] if len(date_range) > 1 else max_date
+
+    df_filtered = apply_fast_filter(
+        df,
+        sel_dramas,
+        sel_accounts,
+        sel_opts,
+        sel_langs,
+        sel_copyrights,
+        sel_comic_types,
+        sel_platforms,
+        sel_targets,
+        sel_opt_modes,
+        sel_pixels,
+        sel_types,
+        start_d,
+        end_d,
+    )
+
+    # 十字高亮支持
     if enable_read_mode:
         st.markdown(
             """
@@ -480,20 +792,15 @@ if uploaded_file is not None:
                         const td = e.target.closest('td, th');
                         if (!td) return;
 
-                        // 清除旧高亮
                         table.querySelectorAll('.crosshair-row, .crosshair-col, .crosshair-focus')
                              .forEach(el => el.classList.remove('crosshair-row', 'crosshair-col', 'crosshair-focus'));
 
                         const tr = td.parentElement;
                         const colIndex = td.cellIndex;
 
-                        // 高亮当前焦点单元格
                         td.classList.add('crosshair-focus');
-
-                        // 高亮当前行
                         tr.querySelectorAll('td, th').forEach(c => c.classList.add('crosshair-row'));
 
-                        // 高亮当前列
                         table.querySelectorAll('tr').forEach(row => {
                             if (row.cells[colIndex]) {
                                 row.cells[colIndex].classList.add('crosshair-col');
@@ -515,955 +822,296 @@ if uploaded_file is not None:
             unsafe_allow_html=True,
         )
 
-    st.markdown("---")
-
     # =========================================================================
-    # 第一部分：整体数据看板
+    # 顶部 6 大 Sheet 选项卡布局视图 (st.tabs)
     # =========================================================================
-    st.header("📌 第一部分：整体数据看板")
-
-    # -------------------------------------------------------------------------
-    # 板块一：不同优化师、不同语种当日数据实况表
-    # -------------------------------------------------------------------------
-    st.subheader(
-        f"📊 板块一：不同优化师、不同语种当日数据实况表 ({latest_date})"
+    sheet1, sheet2, sheet3, sheet4, sheet5, sheet6 = st.tabs(
+        [
+            "📊 第一部分：整体数据看板",
+            "📌 第二部分：多维度分析",
+            "📈 第三部分：投放维度拆分",
+            "⚙️ 第四部分：优化方式&出价深度拆分",
+            "🎯 第五部分：单剧目深度透视",
+            "🎬 第六部分：素材分析",
+        ]
     )
 
-    df_today = df_filtered[df_filtered["日期_str"] == latest_date].copy()
-
-    if df_today.empty:
-        st.warning(f"最新一日 ({latest_date}) 筛选条件下无可展现的数据。")
-    else:
-        total_cost_all = df_today["花费"].sum()
-
-        html_p1 = """<table class="dataframe-table">
-            <thead>
-                <tr>
-                    <th>日期</th>
-                    <th>优化师</th>
-                    <th>剧目/书籍语言</th>
-                    <th>花费 ($)</th>
-                    <th>消耗占比 (%)</th>
-                    <th>D0 达标率 (%)</th>
-                    <th>D0 ROAS (%)</th>
-                    <th>CPI ($)</th>
-                    <th>首日付费率 (%)</th>
-                    <th>CPP ($)</th>
-                    <th>ARPPU ($)</th>
-                    <th>新注册用户占比 (%)</th>
-                    <th>付费用户新注册用户占比 (%)</th>
-                </tr>
-            </thead>
-            <tbody>"""
-
-        if total_cost_all > 0:
-            d0_reach = (
-                (df_today["D0达标率"] * df_today["花费"]).sum()
-                / total_cost_all
-            )
-            d0_roas = (
-                (df_today["d0_roas"] * df_today["花费"]).sum()
-                / total_cost_all
-            )
-            cpi = (
-                df_today["CPI"] * df_today["花费"]
-            ).sum() / total_cost_all
-            pay_rate = (
-                (df_today["首日付费率"] * df_today["花费"]).sum()
-                / total_cost_all
-            )
-            cpp = (
-                (df_today["首日付费用户成本"] * df_today["花费"]).sum()
-                / total_cost_all
-            )
-            arppu = (
-                (
-                    df_today["Arppu- 付费用户人均付费金额"]
-                    * df_today["花费"]
-                ).sum()
-                / total_cost_all
-            )
-            new_reg = (
-                (df_today["新注册用户占比"] * df_today["花费"]).sum()
-                / total_cost_all
-            )
-            pay_new_reg = (
-                (
-                    df_today["付费用户新注册用户占比"] * df_today["花费"]
-                ).sum()
-                / total_cost_all
-            )
-
-            d0_style = (
-                'class="text-green-bold"' if d0_reach >= 0.8 else ""
-            )
-
-            html_p1 += f"""
-            <tr class="row-total">
-                <td>{latest_date}</td>
-                <td colspan="2">大盘总体</td>
-                <td>${total_cost_all:,.2f}</td>
-                <td>100.00%</td>
-                <td {d0_style}>{d0_reach*100:.2f}%</td>
-                <td>{d0_roas*100:.2f}%</td>
-                <td>${cpi:.2f}</td>
-                <td>{pay_rate*100:.2f}%</td>
-                <td>${cpp:.2f}</td>
-                <td>${arppu:.2f}</td>
-                <td>{new_reg*100:.2f}%</td>
-                <td>{pay_new_reg*100:.2f}%</td>
-            </tr>"""
-
-        for lang, group in df_today.groupby("剧目/书籍语言"):
-            lang_cost = group["花费"].sum()
-
-            group_agg = (
-                group.groupby("优化师")
-                .apply(
-                    lambda x: pd.Series(
-                        {
-                            "花费": x["花费"].sum(),
-                            "D0达标率": (x["D0达标率"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "d0_roas": (x["d0_roas"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "CPI": (x["CPI"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "首日付费率": (
-                                x["首日付费率"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "首日付费用户成本": (
-                                x["首日付费用户成本"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "Arppu- 付费用户人均付费金额": (
-                                x["Arppu- 付费用户人均付费金额"]
-                                * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "新注册用户占比": (
-                                x["新注册用户占比"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "付费用户新注册用户占比": (
-                                x["付费用户新注册用户占比"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                        }
-                    )
-                )
-                .reset_index()
-            )
-
-            group_agg = group_agg.sort_values(by="花费", ascending=False)
-            row_count = len(group_agg)
-
-            for idx, (_, row) in enumerate(group_agg.iterrows()):
-                cost_ratio = (
-                    (row["花费"] / total_cost_all * 100)
-                    if total_cost_all > 0
-                    else 0
-                )
-                d0_style = (
-                    'class="text-green-bold"'
-                    if row["D0达标率"] >= 0.8
-                    else ""
-                )
-
-                html_p1 += "<tr>"
-                if idx == 0:
-                    html_p1 += f'<td rowspan="{row_count+1}">{latest_date}</td>'
-
-                html_p1 += f"""
-                    <td>{row['优化师']}</td>
-                    <td>{lang}</td>
-                    <td>${row['花费']:,.2f}</td>
-                    <td>{cost_ratio:.2f}%</td>
-                    <td {d0_style}>{row['D0达标率']*100:.2f}%</td>
-                    <td>{row['d0_roas']*100:.2f}%</td>
-                    <td>${row['CPI']:.2f}</td>
-                    <td>{row['首日付费率']*100:.2f}%</td>
-                    <td>${row['首日付费用户成本']:.2f}</td>
-                    <td>${row['Arppu- 付费用户人均付费金额']:.2f}</td>
-                    <td>{row['新注册用户占比']*100:.2f}%</td>
-                    <td>{row['付费用户新注册用户占比']*100:.2f}%</td>
-                </tr>"""
-
-            l_d0 = (group["D0达标率"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_roas = (group["d0_roas"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_cpi = (group["CPI"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_pay = (group["首日付费率"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_cpp = (group["首日付费用户成本"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_arppu = (
-                group["Arppu- 付费用户人均付费金额"] * group["花费"]
-            ).sum() / (lang_cost or 1)
-            l_reg = (group["新注册用户占比"] * group["花费"]).sum() / (
-                lang_cost or 1
-            )
-            l_preg = (
-                group["付费用户新注册用户占比"] * group["花费"]
-            ).sum() / (lang_cost or 1)
-            l_d0_style = (
-                'class="text-green-bold"' if l_d0 >= 0.8 else ""
-            )
-
-            html_p1 += f"""
-            <tr class="row-subtotal">
-                <td colspan="2">{lang} 小计</td>
-                <td>${lang_cost:,.2f}</td>
-                <td>{(lang_cost/total_cost_all*100) if total_cost_all>0 else 0:.2f}%</td>
-                <td {l_d0_style}>{l_d0*100:.2f}%</td>
-                <td>{l_roas*100:.2f}%</td>
-                <td>${l_cpi:.2f}</td>
-                <td>{l_pay*100:.2f}%</td>
-                <td>${l_cpp:.2f}</td>
-                <td>${l_arppu:.2f}</td>
-                <td>{l_reg*100:.2f}%</td>
-                <td>{l_preg*100:.2f}%</td>
-            </tr>"""
-
-        html_p1 += "</tbody></table>"
-        st.markdown(html_p1, unsafe_allow_html=True)
-
     # -------------------------------------------------------------------------
-    # 板块二：不同优化师、不同语种每日数据情况与趋势表
+    # Sheet 1: 第一部分：整体数据看板
     # -------------------------------------------------------------------------
-    st.subheader(
-        "📊 2. 不同优化师、不同语种每日数据情况与趋势表"
-    )
+    with sheet1:
+        part1_tab1, part1_tab2 = st.tabs(["📊 总体全量", "📈 每日趋势"])
 
-    if not df_filtered.empty:
-        html_p2 = """<table class="dataframe-table">
-            <thead>
-                <tr>
-                    <th>优化师</th>
-                    <th>剧目/书籍语言</th>
-                    <th>日期</th>
-                    <th>当日消耗 ($)</th>
-                    <th>D0 达标率 (%)</th>
-                    <th>D0 ROAS (%)</th>
-                    <th>CPI ($)</th>
-                    <th>首日付费率 (%)</th>
-                    <th>CPP ($)</th>
-                    <th>ARPPU ($)</th>
-                    <th>新注册用户占比 (%)</th>
-                    <th>付费用户新注册用户占比 (%)</th>
-                    <th>消耗趋势</th>
-                    <th>达标率趋势</th>
-                    <th>ROAS 趋势</th>
-                    <th>CPI 趋势</th>
-                </tr>
-            </thead>
-            <tbody>"""
+        with part1_tab1:
+            st.subheader("📊 板块一：数据实况表 (总体全量汇总)")
 
-        for lang, lang_df in df_filtered.groupby("剧目/书籍语言"):
-            opts = lang_df["优化师"].unique()
-            for opt in opts:
-                opt_df = lang_df[lang_df["优化师"] == opt].copy()
+            if df_filtered.empty:
+                st.warning("筛选条件下无可展现的数据。")
+            else:
+                p1_dims = ["剧目/书籍语言", "优化师"]
+                p1_metrics = [
+                    "花费 ($)",
+                    "消耗占比 (%)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_p1 = generate_pivot_html(
+                    df_filtered,
+                    p1_dims,
+                    p1_metrics,
+                    total_title="大盘总体 (全量汇总)",
+                )
+                st.markdown(html_p1, unsafe_allow_html=True)
 
-                opt_daily = (
-                    opt_df.groupby("日期_str")
-                    .apply(
-                        lambda x: pd.Series(
+        with part1_tab2:
+            st.subheader("📈 每日数据趋势情况表")
+
+            if not df_filtered.empty:
+                p2_dims = ["剧目/书籍语言", "优化师", "日期_str"]
+                p2_metrics = [
+                    "花费 ($)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_p2 = generate_pivot_html(
+                    df_filtered,
+                    p2_dims,
+                    p2_metrics,
+                    total_title="全期汇总",
+                )
+                st.markdown(html_p2, unsafe_allow_html=True)
+
+        # 板块二：达标剧目 & 需重点优化
+        st.subheader("📊 板块二：达标剧目 & 需重点优化")
+        if not df_filtered.empty:
+            qualified_shows = []
+            for s_name, s_group in df_filtered.groupby("剧目/书籍名称"):
+                s_m = compute_metrics(s_group)
+                if s_m["花费"] > 100 and s_m["达标率"] >= 0.80:
+                    qualified_shows.append(s_name)
+
+            df_qualified = df_filtered[df_filtered["剧目/书籍名称"].isin(qualified_shows)].copy()
+
+            if df_qualified.empty:
+                st.info("当前筛选条件下，暂无同时满足【花费 > $100 且 D0 达标率 >= 80%】的重点优化剧集。")
+            else:
+                rank_dims = ["剧目/书籍语言", "投放平台", "剧目/书籍名称", "剧目/书籍短ID"]
+                rank_metrics = [
+                    "花费 ($)",
+                    "消耗占比 (%)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                st.markdown(
+                    '##### 📌 表格 4: 达标优化剧集 <span style="color:red; font-weight:bold;">(优化师重点优化剧目)</span>',
+                    unsafe_allow_html=True,
+                )
+                html_rank = generate_pivot_html(
+                    df_qualified, rank_dims, rank_metrics, total_title="重点优化剧集大盘汇总"
+                )
+                st.markdown(html_rank, unsafe_allow_html=True)
+
+        # 板块三：持续低效/衰退剧目 & 需预警止损
+        st.subheader("🚨 板块三：持续低效/衰退剧目 & 需预警止损")
+        if not df_filtered.empty:
+            warning_rows = []
+
+            for s_id, s_group in df_filtered.groupby("剧目/书籍短ID"):
+                s_daily = (
+                    s_group.groupby("日期_str")
+                    .apply(compute_metrics)
+                    .apply(pd.Series)
+                    .reset_index()
+                    .sort_values(by="日期_str", ascending=True)
+                )
+
+                if len(s_daily) >= 2:
+                    rates = s_daily["达标率"].tolist()
+                    s_lang = s_group["剧目/书籍语言"].iloc[0]
+                    s_name = s_group["剧目/书籍名称"].iloc[0]
+                    tot_cost = s_group["花费"].sum()
+                    tot_m = compute_metrics(s_group)
+
+                    is_warn_a = False
+                    is_warn_b = False
+                    is_warn_c = False
+
+                    # 条件 A: 连续 2 天 D0 达标率 < 60%
+                    for i in range(len(rates) - 1):
+                        if rates[i] < 0.60 and rates[i + 1] < 0.60:
+                            is_warn_a = True
+                            break
+
+                    # 条件 B: 连续 3 天 D0 达标率 < 70%
+                    if len(rates) >= 3:
+                        for i in range(len(rates) - 2):
+                            if rates[i] < 0.70 and rates[i + 1] < 0.70 and rates[i + 2] < 0.70:
+                                is_warn_b = True
+                                break
+
+                    # 条件 C: 连续 4 天 D0 达标率 < 76%
+                    if len(rates) >= 4:
+                        for i in range(len(rates) - 3):
+                            if (
+                                rates[i] < 0.76
+                                and rates[i + 1] < 0.76
+                                and rates[i + 2] < 0.76
+                                and rates[i + 3] < 0.76
+                            ):
+                                is_warn_c = True
+                                break
+
+                    if is_warn_a or is_warn_b or is_warn_c:
+                        reasons = []
+                        if is_warn_a:
+                            reasons.append('<span class="badge-warn-a">🚨 连续2天达标率<60%</span>')
+                        if is_warn_b:
+                            reasons.append('<span class="badge-warn-b">⚠️ 连续3天达标率<70%</span>')
+                        if is_warn_c:
+                            reasons.append('<span class="badge-warn-c">🔻 连续4天达标率<76%</span>')
+
+                        warning_rows.append(
                             {
-                                "花费": x["花费"].sum(),
-                                "D0达标率": (
-                                    x["D0达标率"] * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
-                                "d0_roas": (x["d0_roas"] * x["花费"]).sum()
-                                / (x["花费"].sum() or 1),
-                                "CPI": (x["CPI"] * x["花费"]).sum()
-                                / (x["花费"].sum() or 1),
-                                "首日付费率": (
-                                    x["首日付费率"] * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
-                                "首日付费用户成本": (
-                                    x["首日付费用户成本"] * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
-                                "Arppu- 付费用户人均付费金额": (
-                                    x["Arppu- 付费用户人均付费金额"]
-                                    * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
-                                "新注册用户占比": (
-                                    x["新注册用户占比"] * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
-                                "付费用户新注册用户占比": (
-                                    x["付费用户新注册用户占比"]
-                                    * x["花费"]
-                                ).sum()
-                                / (x["花费"].sum() or 1),
+                                "剧目/书籍语言": s_lang,
+                                "剧目/书籍名称": s_name,
+                                "剧目/书籍短ID": s_id,
+                                "花费 ($)": tot_cost,
+                                "D0 达标率 (%)": tot_m["达标率"],
+                                "预警原因/触发条件": " ".join(reasons),
                             }
                         )
-                    )
-                    .reset_index()
+
+            if warning_rows:
+                df_warn_res = (
+                    pd.DataFrame(warning_rows)
+                    .sort_values(by="花费 ($)", ascending=False)
                 )
 
-                opt_daily = opt_daily.sort_values(
-                    by="日期_str", ascending=False
-                )
-                opt_dates_list = opt_daily["日期_str"].tolist()
-                num_rows = len(opt_daily) + 1
+                html_warn = """<table class="dataframe-table">
+                    <thead>
+                        <tr>
+                            <th>剧目/书籍语言</th>
+                            <th>剧目/书籍名称</th>
+                            <th>剧目/书籍短ID</th>
+                            <th>花费 ($)</th>
+                            <th>D0 达标率 (%)</th>
+                            <th>预警原因/触发条件</th>
+                        </tr>
+                    </thead>
+                    <tbody>"""
 
-                for idx, (_, r) in enumerate(opt_daily.iterrows()):
-                    cur_date = r["日期_str"]
-                    cur_idx = opt_dates_list.index(cur_date)
-                    prev_row = None
-                    if cur_idx + 1 < len(opt_dates_list):
-                        p_date = opt_dates_list[cur_idx + 1]
-                        p_match = opt_daily[opt_daily["日期_str"] == p_date]
-                        if not p_match.empty:
-                            prev_row = p_match.iloc[0]
-
-                    cost_trend = (
-                        get_trend_str(r["花费"], prev_row["花费"])
-                        if prev_row is not None
-                        else "-"
-                    )
-                    d0_trend = (
-                        get_trend_str(r["D0达标率"], prev_row["D0达标率"])
-                        if prev_row is not None
-                        else "-"
-                    )
-                    roas_trend = (
-                        get_trend_str(r["d0_roas"], prev_row["d0_roas"])
-                        if prev_row is not None
-                        else "-"
-                    )
-                    cpi_trend = (
-                        get_trend_str(
-                            r["CPI"], prev_row["CPI"], is_cost=True
-                        )
-                        if prev_row is not None
-                        else "-"
-                    )
-
-                    row_class = (
-                        'class="row-muted"' if cur_date != latest_date else ""
-                    )
-                    d0_cell = (
-                        'class="cell-highlight-green"'
-                        if r["D0达标率"] >= 0.85
-                        else ""
-                    )
-
-                    html_p2 += f"<tr {row_class}>"
-                    if idx == 0:
-                        html_p2 += f'<td rowspan="{num_rows}">{opt}</td>'
-                        html_p2 += f'<td rowspan="{num_rows}">{lang}</td>'
-
-                    html_p2 += f"""
-                        <td>{cur_date}</td>
-                        <td>${r['花费']:,.2f}</td>
-                        <td {d0_cell}>{r['D0达标率']*100:.2f}%</td>
-                        <td>{r['d0_roas']*100:.2f}%</td>
-                        <td>${r['CPI']:.2f}</td>
-                        <td>{r['首日付费率']*100:.2f}%</td>
-                        <td>${r['首日付费用户成本']:.2f}</td>
-                        <td>${r['Arppu- 付费用户人均付费金额']:.2f}</td>
-                        <td>{r['新注册用户占比']*100:.2f}%</td>
-                        <td>{r['付费用户新注册用户占比']*100:.2f}%</td>
-                        <td class="col-trend">{cost_trend}</td>
-                        <td class="col-trend">{d0_trend}</td>
-                        <td class="col-trend">{roas_trend}</td>
-                        <td class="col-trend">{cpi_trend}</td>
+                for _, r in df_warn_res.iterrows():
+                    d0_v = r["D0 达标率 (%)"]
+                    html_warn += f"""
+                    <tr>
+                        <td>{r['剧目/书籍语言']}</td>
+                        <td>{r['剧目/书籍名称']}</td>
+                        <td>{r['剧目/书籍短ID']}</td>
+                        <td>${r['花费 ($)']:,.2f}</td>
+                        <td style="color:red; font-weight:bold;">{format_pct(d0_v)}</td>
+                        <td style="text-align:left; padding-left:15px;">{r['预警原因/触发条件']}</td>
                     </tr>"""
 
-                o_cost_tot = opt_df["花费"].sum()
-                o_d0_3d = (opt_df["D0达标率"] * opt_df["花费"]).sum() / (
-                    o_cost_tot or 1
-                )
-                o_roas_3d = (opt_df["d0_roas"] * opt_df["花费"]).sum() / (
-                    o_cost_tot or 1
-                )
-                o_cpi_3d = (opt_df["CPI"] * opt_df["花费"]).sum() / (
-                    o_cost_tot or 1
-                )
-                o_pay_3d = (opt_df["首日付费率"] * opt_df["花费"]).sum() / (
-                    o_cost_tot or 1
-                )
-                o_cpp_3d = (
-                    opt_df["首日付费用户成本"] * opt_df["花费"]
-                ).sum() / (o_cost_tot or 1)
-                o_arppu_3d = (
-                    opt_df["Arppu- 付费用户人均付费金额"] * opt_df["花费"]
-                ).sum() / (o_cost_tot or 1)
-                o_reg_3d = (
-                    opt_df["新注册用户占比"] * opt_df["花费"]
-                ).sum() / (o_cost_tot or 1)
-                o_preg_3d = (
-                    opt_df["付费用户新注册用户占比"] * opt_df["花费"]
-                ).sum() / (o_cost_tot or 1)
-
-                o_d0_style = (
-                    'class="cell-highlight-green"'
-                    if o_d0_3d >= 0.85
-                    else ""
-                )
-
-                html_p2 += f"""
-                <tr class="row-subtotal">
-                    <td>全期汇总</td>
-                    <td>${o_cost_tot:,.2f}</td>
-                    <td {o_d0_style}>{o_d0_3d*100:.2f}%</td>
-                    <td>{o_roas_3d*100:.2f}%</td>
-                    <td>${o_cpi_3d:.2f}</td>
-                    <td>{o_pay_3d*100:.2f}%</td>
-                    <td>${o_cpp_3d:.2f}</td>
-                    <td>${o_arppu_3d:.2f}</td>
-                    <td>{o_reg_3d*100:.2f}%</td>
-                    <td>{o_preg_3d*100:.2f}%</td>
-                    <td class="col-trend" colspan="4">-</td>
-                </tr>"""
-
-        html_p2 += "</tbody></table>"
-        st.markdown(html_p2, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # =========================================================================
-    # 第二部分：剧集细拆分析 (板块三)
-    # =========================================================================
-    st.header("📌 第二部分：剧集细拆分析（板块三）")
-
-    df_filtered["latest_date_dt"] = pd.to_datetime(latest_date)
-    df_filtered["first_date_dt"] = pd.to_datetime(df_filtered["首次投放的日期"])
-    df_filtered["is_new_drama"] = (
-        df_filtered["latest_date_dt"] - df_filtered["first_date_dt"]
-    ).dt.days <= 3
-
-    # -------------------------------------------------------------------------
-    # 表格 1：📊 具体投放剧目类型情况拆分表
-    # -------------------------------------------------------------------------
-    st.subheader("📊 表格 1：具体投放剧目类型情况拆分表")
-
-    if not df_filtered.empty:
-        html_t1 = """<table class="dataframe-table">
-            <thead>
-                <tr>
-                    <th>版权来源</th>
-                    <th>漫剧类型</th>
-                    <th>花费 ($)</th>
-                    <th>在投总数</th>
-                    <th>新剧数量</th>
-                    <th>达标率 (%)</th>
-                    <th>新剧达标率 (%)</th>
-                    <th>D0 ROAS (%)</th>
-                    <th>CPI ($)</th>
-                    <th>首日付费率 (%)</th>
-                    <th>CPP ($)</th>
-                    <th>ARPPU ($)</th>
-                    <th>新注册用户占比 (%)</th>
-                    <th>付费用户新注册用户占比 (%)</th>
-                </tr>
-            </thead>
-            <tbody>"""
-
-        for copyright_src, group_c in df_filtered.groupby("版权来源"):
-            c_cost = group_c["花费"].sum()
-
-            sub_list = []
-            for m_type, group_m in group_c.groupby("漫剧类型"):
-                m_cost = group_m["花费"].sum()
-                total_shows = group_m["剧目/书籍名称"].nunique()
-
-                new_shows_df = group_m[group_m["is_new_drama"]]
-                new_shows_count = new_shows_df["剧目/书籍名称"].nunique()
-
-                d0_reach = (group_m["D0达标率"] * group_m["花费"]).sum() / (
-                    m_cost or 1
-                )
-                new_d0_reach = (
-                    (new_shows_df["D0达标率"] * new_shows_df["花费"]).sum()
-                    / (new_shows_df["花费"].sum() or 1)
-                    if not new_shows_df.empty
-                    else 0.0
-                )
-
-                sub_list.append(
-                    {
-                        "漫剧类型": m_type,
-                        "花费": m_cost,
-                        "在投总数": total_shows,
-                        "新剧数量": new_shows_count,
-                        "达标率": d0_reach,
-                        "新剧达标率": new_d0_reach,
-                        "D0 ROAS": (
-                            group_m["d0_roas"] * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                        "CPI": (group_m["CPI"] * group_m["花费"]).sum()
-                        / (m_cost or 1),
-                        "首日付费率": (
-                            group_m["首日付费率"] * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                        "CPP": (
-                            group_m["首日付费用户成本"] * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                        "ARPPU": (
-                            group_m["Arppu- 付费用户人均付费金额"]
-                            * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                        "新注册用户占比": (
-                            group_m["新注册用户占比"] * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                        "付费用户新注册用户占比": (
-                            group_m["付费用户新注册用户占比"]
-                            * group_m["花费"]
-                        ).sum()
-                        / (m_cost or 1),
-                    }
-                )
-
-            sub_df = pd.DataFrame(sub_list).sort_values(
-                by="花费", ascending=False
-            )
-            row_count = len(sub_df)
-
-            for idx, (_, r) in enumerate(sub_df.iterrows()):
-                d0_cell = (
-                    'class="cell-highlight-green"'
-                    if r["达标率"] >= 0.85
-                    else ""
-                )
-                new_d0_cell = (
-                    'class="cell-highlight-green"'
-                    if r["新剧达标率"] >= 0.85
-                    else ""
-                )
-
-                html_t1 += "<tr>"
-                if idx == 0:
-                    html_t1 += f'<td rowspan="{row_count+1}">{copyright_src}</td>'
-
-                html_t1 += f"""
-                    <td>{r['漫剧类型']}</td>
-                    <td>${r['花费']:,.2f}</td>
-                    <td>{r['在投总数']}</td>
-                    <td>{r['新剧数量']}</td>
-                    <td {d0_cell}>{r['达标率']*100:.2f}%</td>
-                    <td {new_d0_cell}>{r['新剧达标率']*100:.2f}%</td>
-                    <td>{r['D0 ROAS']*100:.2f}%</td>
-                    <td>${r['CPI']:.2f}</td>
-                    <td>{r['首日付费率']*100:.2f}%</td>
-                    <td>${r['CPP']:.2f}</td>
-                    <td>${r['ARPPU']:.2f}</td>
-                    <td>{r['新注册用户占比']*100:.2f}%</td>
-                    <td>{r['付费用户新注册用户占比']*100:.2f}%</td>
-                </tr>"""
-
-            c_d0 = (group_c["D0达标率"] * group_c["花费"]).sum() / (c_cost or 1)
-            c_d0_cell = (
-                'class="cell-highlight-green"' if c_d0 >= 0.85 else ""
-            )
-            c_new = group_c[group_c["is_new_drama"]]
-            c_new_d0 = (
-                (c_new["D0达标率"] * c_new["花费"]).sum() / (c_new["花费"].sum() or 1)
-                if not c_new.empty
-                else 0.0
-            )
-            c_new_d0_cell = (
-                'class="cell-highlight-green"' if c_new_d0 >= 0.85 else ""
-            )
-
-            html_t1 += f"""
-            <tr class="row-subtotal">
-                <td>{copyright_src} 小计</td>
-                <td>${c_cost:,.2f}</td>
-                <td>{group_c['剧目/书籍名称'].nunique()}</td>
-                <td>{c_new['剧目/书籍名称'].nunique()}</td>
-                <td {c_d0_cell}>{c_d0*100:.2f}%</td>
-                <td {c_new_d0_cell}>{c_new_d0*100:.2f}%</td>
-                <td>{(group_c['d0_roas']*group_c['花费']).sum()/(c_cost or 1)*100:.2f}%</td>
-                <td>${(group_c['CPI']*group_c['花费']).sum()/(c_cost or 1):.2f}</td>
-                <td>{(group_c['首日付费率']*group_c['花费']).sum()/(c_cost or 1)*100:.2f}%</td>
-                <td>${(group_c['首日付费用户成本']*group_c['花费']).sum()/(c_cost or 1):.2f}</td>
-                <td>${(group_c['Arppu- 付费用户人均付费金额']*group_c['花费']).sum()/(c_cost or 1):.2f}</td>
-                <td>{(group_c['新注册用户占比']*group_c['花费']).sum()/(c_cost or 1)*100:.2f}%</td>
-                <td>{(group_c['付费用户新注册用户占比']*group_c['花费']).sum()/(c_cost or 1)*100:.2f}%</td>
-            </tr>"""
-
-        html_t1 += "</tbody></table>"
-        st.markdown(html_t1, unsafe_allow_html=True)
-
-    # -------------------------------------------------------------------------
-    # 表格 2：🎬 具体投放剧目情况表
-    # -------------------------------------------------------------------------
-    st.subheader(f"🎬 表格 2：具体投放剧目情况表 (当日明细 - {latest_date})")
-
-    df_today_shows = df_filtered[df_filtered["日期_str"] == latest_date].copy()
-
-    if not df_today_shows.empty:
-        d_all_reach_dict = {}
-        for s_name, s_group in df_filtered.groupby("剧目/书籍名称"):
-            s_cost_all = s_group["花费"].sum()
-            if s_cost_all > 0:
-                d_all_reach_dict[s_name] = (
-                    s_group["D0达标率"] * s_group["花费"]
-                ).sum() / s_cost_all
+                html_warn += "</tbody></table>"
+                st.markdown(html_warn, unsafe_allow_html=True)
             else:
-                d_all_reach_dict[s_name] = 0.0
-
-        show_agg = (
-            df_today_shows.groupby(
-                [
-                    "剧目/书籍名称",
-                    "剧目/书籍中文名称",
-                    "剧目/书籍短ID",
-                    "版权来源",
-                ]
-            )
-            .apply(
-                lambda x: pd.Series(
-                    {
-                        "花费": x["花费"].sum(),
-                        "达标率": (x["D0达标率"] * x["花费"]).sum()
-                        / (x["花费"].sum() or 1),
-                        "D0 ROAS": (x["d0_roas"] * x["花费"]).sum()
-                        / (x["花费"].sum() or 1),
-                        "CPI": (x["CPI"] * x["花费"]).sum()
-                        / (x["花费"].sum() or 1),
-                        "首日付费率": (x["首日付费率"] * x["花费"]).sum()
-                        / (x["花费"].sum() or 1),
-                        "CPP": (x["首日付费用户成本"] * x["花费"]).sum()
-                        / (x["花费"].sum() or 1),
-                        "ARPPU": (
-                            x["Arppu- 付费用户人均付费金额"] * x["花费"]
-                        ).sum()
-                        / (x["花费"].sum() or 1),
-                        "新注册占比": (
-                            x["新注册用户占比"] * x["花费"]
-                        ).sum()
-                        / (x["花费"].sum() or 1),
-                        "付费新注册占比": (
-                            x["付费用户新注册用户占比"] * x["花费"]
-                        ).sum()
-                        / (x["花费"].sum() or 1),
-                    }
-                )
-            )
-            .reset_index()
-            .sort_values(by="花费", ascending=False)
-        )
-
-        html_t2 = """<table class="dataframe-table">
-            <thead>
-                <tr>
-                    <th>序号</th>
-                    <th>剧目名称</th>
-                    <th>中文推广剧目</th>
-                    <th>剧目ID</th>
-                    <th>版权来源</th>
-                    <th>花费 ($)</th>
-                    <th>达标率 (%)</th>
-                    <th>全期汇总达标率 (%)</th>
-                    <th>D0 ROAS (%)</th>
-                    <th>CPI ($)</th>
-                    <th>首日付费率 (%)</th>
-                    <th>CPP ($)</th>
-                    <th>ARPPU ($)</th>
-                    <th>新注册占比 (%)</th>
-                    <th>付费新注册占比 (%)</th>
-                </tr>
-            </thead>
-            <tbody>"""
-
-        for idx, (_, r) in enumerate(show_agg.iterrows(), start=1):
-            d0_cell = (
-                'class="cell-highlight-green"'
-                if r["达标率"] >= 0.85
-                else ""
-            )
-            d_all_val = d_all_reach_dict.get(r["剧目/书籍名称"], 0.0)
-            d_all_cell = 'class="cell-highlight-pink"'
-
-            html_t2 += f"""
-            <tr>
-                <td>{idx}</td>
-                <td>{r['剧目/书籍名称']}</td>
-                <td>{r['剧目/书籍中文名称']}</td>
-                <td>{r['剧目/书籍短ID']}</td>
-                <td>{r['版权来源']}</td>
-                <td>${r['花费']:,.2f}</td>
-                <td {d0_cell}>{r['达标率']*100:.2f}%</td>
-                <td {d_all_cell}>{d_all_val*100:.2f}%</td>
-                <td>{r['D0 ROAS']*100:.2f}%</td>
-                <td>${r['CPI']:.2f}</td>
-                <td>{r['首日付费率']*100:.2f}%</td>
-                <td>${r['CPP']:.2f}</td>
-                <td>${r['ARPPU']:.2f}</td>
-                <td>{r['新注册占比']*100:.2f}%</td>
-                <td>{r['付费新注册占比']*100:.2f}%</td>
-            </tr>"""
-
-        html_t2 += "</tbody></table>"
-        st.markdown(html_t2, unsafe_allow_html=True)
+                st.success("🎉 当前全盘表现优异，未发现任何衰退预警止损剧目！")
 
     # -------------------------------------------------------------------------
-    # 表格 3：📈 具体投放剧目每日数据情况表
+    # Sheet 2: 第二部分：多维度分析 (包含追加的新增表格 3)
     # -------------------------------------------------------------------------
-    st.subheader(
-        "📈 表格 3: 具体投放剧目每日数据情况表"
-    )
-
-    if not df_filtered.empty:
-        show_rank = (
-            df_filtered.groupby(
-                [
-                    "剧目/书籍名称",
-                    "剧目/书籍中文名称",
-                    "剧目/书籍短ID",
-                ]
-            )["花费"]
-            .sum()
-            .reset_index()
-            .sort_values(by="花费", ascending=False)
-        )
-
-        html_t3 = """<table class="dataframe-table">
-            <thead>
-                <tr>
-                    <th>序号</th>
-                    <th>剧目名称</th>
-                    <th>中文推广剧目</th>
-                    <th>剧目ID</th>
-                    <th>日期</th>
-                    <th>花费 ($)</th>
-                    <th>达标率 (%)</th>
-                    <th>D0 ROAS (%)</th>
-                    <th>CPI ($)</th>
-                    <th>首日付费率 (%)</th>
-                    <th>CPP ($)</th>
-                    <th>ARPPU ($)</th>
-                    <th>新注册占比 (%)</th>
-                    <th>付费新注册占比 (%)</th>
-                    <th>消耗趋势</th>
-                    <th>达标率趋势</th>
-                    <th>ROAS 趋势</th>
-                    <th>CPI 趋势</th>
-                </tr>
-            </thead>
-            <tbody>"""
-
-        for rank_idx, (_, s_row) in enumerate(show_rank.iterrows(), start=1):
-            s_name = s_row["剧目/书籍名称"]
-            s_zh = s_row["剧目/书籍中文名称"]
-            s_id = s_row["剧目/书籍短ID"]
-
-            s_df = df_filtered[
-                df_filtered["剧目/书籍名称"] == s_name
-            ].copy()
-
-            s_daily = (
-                s_df.groupby("日期_str")
-                .apply(
-                    lambda x: pd.Series(
-                        {
-                            "花费": x["花费"].sum(),
-                            "达标率": (x["D0达标率"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "D0 ROAS": (x["d0_roas"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "CPI": (x["CPI"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "首日付费率": (x["首日付费率"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "CPP": (x["首日付费用户成本"] * x["花费"]).sum()
-                            / (x["花费"].sum() or 1),
-                            "ARPPU": (
-                                x["Arppu- 付费用户人均付费金额"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "新注册占比": (
-                                x["新注册用户占比"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                            "付费新注册占比": (
-                                x["付费用户新注册用户占比"] * x["花费"]
-                            ).sum()
-                            / (x["花费"].sum() or 1),
-                        }
-                    )
-                )
-                .reset_index()
-            )
-
-            s_daily = s_daily.sort_values(by="日期_str", ascending=False)
-            s_dates_list = s_daily["日期_str"].tolist()
-            num_rows = len(s_daily) + 1
-
-            for idx, (_, r) in enumerate(s_daily.iterrows()):
-                cur_date = r["日期_str"]
-                cur_idx = s_dates_list.index(cur_date)
-                prev_row = None
-                if cur_idx + 1 < len(s_dates_list):
-                    p_date = s_dates_list[cur_idx + 1]
-                    p_match = s_daily[s_daily["日期_str"] == p_date]
-                    if not p_match.empty:
-                        prev_row = p_match.iloc[0]
-
-                cost_trend = (
-                    get_trend_str(r["花费"], prev_row["花费"])
-                    if prev_row is not None
-                    else "-"
-                )
-                d0_trend = (
-                    get_trend_str(r["达标率"], prev_row["达标率"])
-                    if prev_row is not None
-                    else "-"
-                )
-                roas_trend = (
-                    get_trend_str(r["D0 ROAS"], prev_row["D0 ROAS"])
-                    if prev_row is not None
-                    else "-"
-                )
-                cpi_trend = (
-                    get_trend_str(r["CPI"], prev_row["CPI"], is_cost=True)
-                    if prev_row is not None
-                    else "-"
-                )
-
-                row_class = (
-                    'class="row-muted"' if cur_date != latest_date else ""
-                )
-                d0_cell = (
-                    'class="cell-highlight-green"'
-                    if r["达标率"] >= 0.85
-                    else ""
-                )
-
-                html_t3 += f"<tr {row_class}>"
-                if idx == 0:
-                    html_t3 += f'<td rowspan="{num_rows}">{rank_idx}</td>'
-                    html_t3 += f'<td rowspan="{num_rows}">{s_name}</td>'
-                    html_t3 += f'<td rowspan="{num_rows}">{s_zh}</td>'
-                    html_t3 += f'<td rowspan="{num_rows}">{s_id}</td>'
-
-                html_t3 += f"""
-                    <td>{cur_date}</td>
-                    <td>${r['花费']:,.2f}</td>
-                    <td {d0_cell}>{r['达标率']*100:.2f}%</td>
-                    <td>{r['D0 ROAS']*100:.2f}%</td>
-                    <td>${r['CPI']:.2f}</td>
-                    <td>{r['首日付费率']*100:.2f}%</td>
-                    <td>${r['CPP']:.2f}</td>
-                    <td>${r['ARPPU']:.2f}</td>
-                    <td>{r['新注册占比']*100:.2f}%</td>
-                    <td>{r['付费新注册占比']*100:.2f}%</td>
-                    <td class="col-trend">{cost_trend}</td>
-                    <td class="col-trend">{d0_trend}</td>
-                    <td class="col-trend">{roas_trend}</td>
-                    <td class="col-trend">{cpi_trend}</td>
-                </tr>"""
-
-            s_cost_total = s_df["花费"].sum()
-            s_d0_3d = (s_df["D0达标率"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_roas_3d = (s_df["d0_roas"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_cpi_3d = (s_df["CPI"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_pay_3d = (s_df["首日付费率"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_cpp_3d = (s_df["首日付费用户成本"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_arppu_3d = (
-                s_df["Arppu- 付费用户人均付费金额"] * s_df["花费"]
-            ).sum() / (s_cost_total or 1)
-            s_reg_3d = (s_df["新注册用户占比"] * s_df["花费"]).sum() / (
-                s_cost_total or 1
-            )
-            s_preg_3d = (
-                s_df["付费用户新注册用户占比"] * s_df["花费"]
-            ).sum() / (s_cost_total or 1)
-
-            tot_d0_cell = (
-                'class="cell-highlight-green"' if s_d0_3d >= 0.85 else ""
-            )
-
-            html_t3 += f"""
-            <tr class="row-subtotal">
-                <td>剧目全期汇总</td>
-                <td>${s_cost_total:,.2f}</td>
-                <td {tot_d0_cell}>{s_d0_3d*100:.2f}%</td>
-                <td>{s_roas_3d*100:.2f}%</td>
-                <td>${s_cpi_3d:.2f}</td>
-                <td>{s_pay_3d*100:.2f}%</td>
-                <td>${s_cpp_3d:.2f}</td>
-                <td>${s_arppu_3d:.2f}</td>
-                <td>{s_reg_3d*100:.2f}%</td>
-                <td>{s_preg_3d*100:.2f}%</td>
-                <td class="col-trend" colspan="4">-</td>
-            </tr>"""
-
-        html_t3 += "</tbody></table>"
-        st.markdown(html_t3, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # =========================================================================
-    # 第三部分：投放维度拆分
-    # =========================================================================
-    st.header("📌 第三部分：投放维度拆分")
-
-    # -------------------------------------------------------------------------
-    # 第三部分双时间窗 (Time Window Tabs) 数据隔离机制
-    # -------------------------------------------------------------------------
-    part3_tab1, part3_tab2 = st.tabs(
-        ["📅 当日数据 (最新一日)", "🌐 全量总计 (所有时间汇总)"]
-    )
-
-    def render_part3_content(df_p3_working, is_daily_mode):
-        suffix_title = "(当日实况)" if is_daily_mode else "(全量总计)"
-        total_title = (
-            f"大盘总计 / 当日实况汇总"
-            if is_daily_mode
-            else f"大盘总计 / 全量总计汇总"
-        )
-
-        if is_daily_mode:
-            st.info(
-                f"📌 当前展示【最新一日 {latest_date}】的数据聚合透视"
-            )
-        else:
-            st.info("🌐 当前展示【底表所有日期】的全量数据聚合透视")
-
-        # ---------------------------------------------------------------------
-        # 板块 1: 渠道维度情况 (FB / TT)
-        # ---------------------------------------------------------------------
-        st.subheader("📊 板块 1: 渠道维度情况 (FB / TT)")
-
-        st.markdown(
-            f"##### 📌 表格 1: 投放平台指标汇总与消耗占比透视 {suffix_title}"
-        )
-        if not df_p3_working.empty:
-            c1_metrics = [
+    with sheet2:
+        # 表格 1: 投放平台 × 账户 成效透视明细表
+        st.subheader("📊 表格 1: 投放平台 × 账户 成效透视明细表")
+        if not df_filtered.empty:
+            acc_dims = ["剧目/书籍语言", "投放平台", "账户时区", "投放账户名称"]
+            acc_metrics = [
                 "花费 ($)",
-                "花费占比 (%)",
+                "消耗占比 (%)",
+                "达标率 (%)",
+                "D0 ROAS (%)",
+                "CPI ($)",
+                "首日付费率 (%)",
+                "CPP ($)",
+                "ARPPU ($)",
+            ]
+            html_acc = generate_pivot_html(
+                df_filtered, acc_dims, acc_metrics, total_title="大盘总计 / 账户汇总"
+            )
+            st.markdown(html_acc, unsafe_allow_html=True)
+
+        # 表格 2: 投放平台 × Pixel 名称成效透视明细表
+        st.subheader("🎯 表格 2: 投放平台 × Pixel 名称成效透视明细表")
+        if not df_filtered.empty:
+            pixel_dims = ["剧目/书籍语言", "pixel名称", "投放平台", "推广目标", "优化方式"]
+            pixel_metrics = [
+                "花费 ($)",
+                "达标率 (%)",
+                "D0 ROAS (%)",
+                "CPI ($)",
+                "CPP ($)",
+                "首日付费率 (%)",
+                "新注册用户占比 (%)",
+                "付费用户新注册用户占比 (%)",
+            ]
+            html_pixel = generate_pivot_html(
+                df_filtered, pixel_dims, pixel_metrics, total_title="大盘总计 / Pixel汇总"
+            )
+            st.markdown(html_pixel, unsafe_allow_html=True)
+
+        # 一、 【本次追加新增】表格 3: 投放平台 × 推广目标 × 账户名称 成效透视明细表
+        st.subheader("🚀 表格 3: 投放平台 × 推广目标 × 账户名称 成效透视明细表")
+        if not df_filtered.empty:
+            target_acc_dims = [
+                "剧目/书籍语言",
+                "投放平台",
+                "推广目标",
+                "投放账户名称",
+            ]
+            target_acc_metrics = [
+                "花费 ($)",
+                "消耗占比 (%)",
+                "达标率 (%)",
+                "D0 ROAS (%)",
+                "CPI ($)",
+                "首日付费率 (%)",
+                "CPP ($)",
+                "ARPPU ($)",
+            ]
+            html_target_acc = generate_pivot_html(
+                df_filtered,
+                target_acc_dims,
+                target_acc_metrics,
+                total_title="大盘总计 / 目标账户汇总",
+            )
+            st.markdown(html_target_acc, unsafe_allow_html=True)
+
+        # 表格 4: 投放平台 × 剧目类型成效透视明细表
+        st.subheader("🎭 表格 4: 投放平台 × 剧目类型成效透视明细表")
+        if not df_filtered.empty:
+            type_col_name = "漫剧类型" if "漫剧类型" in df_filtered.columns else "书籍类型"
+            type_dims = ["剧目/书籍语言", "投放平台", "版权来源", type_col_name]
+            type_metrics = [
+                "花费 ($)",
+                "消耗占比 (%)",
                 "达标率 (%)",
                 "D0 ROAS (%)",
                 "CPI ($)",
@@ -1473,414 +1121,14 @@ if uploaded_file is not None:
                 "新注册用户占比 (%)",
                 "付费用户新注册用户占比 (%)",
             ]
-            html_c1 = generate_pivot_html(
-                df_p3_working,
-                ["优化师", "剧目/书籍语言", "投放平台"],
-                c1_metrics,
-                total_title=total_title,
+            html_type = generate_pivot_html(
+                df_filtered, type_dims, type_metrics, total_title="大盘总计 / 类型汇总"
             )
-            st.markdown(html_c1, unsafe_allow_html=True)
+            st.markdown(html_type, unsafe_allow_html=True)
 
-        st.markdown(
-            f"##### 📌 表格 2: 投放平台每日数据趋势表 {suffix_title}"
-        )
-        if not df_p3_working.empty:
-            html_c2 = """<table class="dataframe-table">
-                <thead>
-                    <tr>
-                        <th>优化师</th>
-                        <th>语种</th>
-                        <th>投放平台</th>
-                        <th>日期</th>
-                        <th>花费 ($)</th>
-                        <th>达标率 (%)</th>
-                        <th>D0 ROAS (%)</th>
-                        <th>CPI ($)</th>
-                        <th>CPP ($)</th>
-                        <th>新注册用户占比 (%)</th>
-                        <th>付费用户新注册用户占比 (%)</th>
-                        <th>消耗趋势</th>
-                        <th>达标率趋势</th>
-                        <th>ROAS 趋势</th>
-                        <th>CPI 趋势</th>
-                    </tr>
-                </thead>
-                <tbody>"""
-
-            total_cost_p2 = df_p3_working["花费"].sum()
-            if total_cost_p2 > 0:
-                d0_all = (
-                    df_p3_working["D0达标率"] * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                roas_all = (
-                    df_p3_working["d0_roas"] * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                cpi_all = (
-                    df_p3_working["CPI"] * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                cpp_all = (
-                    df_p3_working["首日付费用户成本"]
-                    * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                reg_all = (
-                    df_p3_working["新注册用户占比"] * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                preg_all = (
-                    df_p3_working["付费用户新注册用户占比"]
-                    * df_p3_working["花费"]
-                ).sum() / total_cost_p2
-                d0_cell = (
-                    'class="cell-highlight-green"' if d0_all >= 0.85 else ""
-                )
-
-                html_c2 += f"""
-                <tr class="row-total">
-                    <td colspan="4">{total_title}</td>
-                    <td>${total_cost_p2:,.2f}</td>
-                    <td {d0_cell}>{d0_all*100:.2f}%</td>
-                    <td>{roas_all*100:.2f}%</td>
-                    <td>${cpi_all:.2f}</td>
-                    <td>${cpp_all:.2f}</td>
-                    <td>{reg_all*100:.2f}%</td>
-                    <td>{preg_all*100:.2f}%</td>
-                    <td class="col-trend" colspan="4">-</td>
-                </tr>"""
-
-            opt_sorted = (
-                df_p3_working.groupby("优化师")["花费"]
-                .sum()
-                .reset_index()
-                .sort_values(by="花费", ascending=False)
-            )
-
-            for _, opt_r in opt_sorted.iterrows():
-                opt = opt_r["优化师"]
-                g_opt = df_p3_working[df_p3_working["优化师"] == opt]
-
-                for lang, g_lang in g_opt.groupby("剧目/书籍语言"):
-                    for plat, g_plat in g_lang.groupby("投放平台"):
-                        p_daily = (
-                            g_plat.groupby("日期_str")
-                            .apply(
-                                lambda x: pd.Series(
-                                    {
-                                        "花费": x["花费"].sum(),
-                                        "达标率": (
-                                            x["D0达标率"] * x["花费"]
-                                        ).sum()
-                                        / (x["花费"].sum() or 1),
-                                        "D0 ROAS": (
-                                            x["d0_roas"] * x["花费"]
-                                        ).sum()
-                                        / (x["花费"].sum() or 1),
-                                        "CPI": (x["CPI"] * x["花费"]).sum()
-                                        / (x["花费"].sum() or 1),
-                                        "CPP": (
-                                            x["首日付费用户成本"] * x["花费"]
-                                        ).sum()
-                                        / (x["花费"].sum() or 1),
-                                        "新注册用户占比": (
-                                            x["新注册用户占比"] * x["花费"]
-                                        ).sum()
-                                        / (x["花费"].sum() or 1),
-                                        "付费用户新注册用户占比": (
-                                            x["付费用户新注册用户占比"]
-                                            * x["花费"]
-                                        ).sum()
-                                        / (x["花费"].sum() or 1),
-                                    }
-                                )
-                            )
-                            .reset_index()
-                            .sort_values(by="日期_str", ascending=False)
-                        )
-
-                        p_dates_list = p_daily["日期_str"].tolist()
-                        num_rows = len(p_daily)
-                        for idx, (_, r) in enumerate(p_daily.iterrows()):
-                            cur_date = r["日期_str"]
-                            cur_idx = p_dates_list.index(cur_date)
-                            prev_row = None
-                            if cur_idx + 1 < len(p_dates_list):
-                                p_date = p_dates_list[cur_idx + 1]
-                                p_match = p_daily[
-                                    p_daily["日期_str"] == p_date
-                                ]
-                                if not p_match.empty:
-                                    prev_row = p_match.iloc[0]
-
-                            cost_trend = (
-                                get_trend_str(r["花费"], prev_row["花费"])
-                                if prev_row is not None
-                                else "-"
-                            )
-                            d0_trend = (
-                                get_trend_str(
-                                    r["达标率"], prev_row["达标率"]
-                                )
-                                if prev_row is not None
-                                else "-"
-                            )
-                            roas_trend = (
-                                get_trend_str(
-                                    r["D0 ROAS"], prev_row["D0 ROAS"]
-                                )
-                                if prev_row is not None
-                                else "-"
-                            )
-                            cpi_trend = (
-                                get_trend_str(
-                                    r["CPI"], prev_row["CPI"], is_cost=True
-                                )
-                                if prev_row is not None
-                                else "-"
-                            )
-
-                            row_class = (
-                                'class="row-muted"'
-                                if cur_date != latest_date
-                                else ""
-                            )
-                            d0_cell = (
-                                'class="cell-highlight-green"'
-                                if r["达标率"] >= 0.85
-                                else ""
-                            )
-
-                            html_c2 += f"<tr {row_class}>"
-                            if idx == 0:
-                                html_c2 += (
-                                    f'<td rowspan="{num_rows}">{opt}</td>'
-                                )
-                                html_c2 += (
-                                    f'<td rowspan="{num_rows}">{lang}</td>'
-                                )
-                                html_c2 += (
-                                    f'<td rowspan="{num_rows}">{plat}</td>'
-                                )
-
-                            html_c2 += f"""
-                                <td>{cur_date}</td>
-                                <td>${r['花费']:,.2f}</td>
-                                <td {d0_cell}>{r['达标率']*100:.2f}%</td>
-                                <td>{r['D0 ROAS']*100:.2f}%</td>
-                                <td>${r['CPI']:.2f}</td>
-                                <td>${r['CPP']:.2f}</td>
-                                <td>{r['新注册用户占比']*100:.2f}%</td>
-                                <td>{r['付费用户新注册用户占比']*100:.2f}%</td>
-                                <td class="col-trend">{cost_trend}</td>
-                                <td class="col-trend">{d0_trend}</td>
-                                <td class="col-trend">{roas_trend}</td>
-                                <td class="col-trend">{cpi_trend}</td>
-                            </tr>"""
-
-            html_c2 += "</tbody></table>"
-            st.markdown(html_c2, unsafe_allow_html=True)
-
-        # ---------------------------------------------------------------------
-        # 板块 2: 优化方式维度情况
-        # ---------------------------------------------------------------------
-        st.subheader("⚙️ 板块 2: 优化方式维度情况")
-
-        st.markdown(
-            f"##### 📌 表格 1: 大盘 - 优化方式 & 出价透视表 {suffix_title}"
-        )
-        if not df_p3_working.empty:
-            o1_dims = [
-                "剧目/书籍语言",
-                "投放平台",
-                "推广目标",
-                "优化方式",
-                "手动出价的金额/系数",
-            ]
-            o1_metrics = [
-                "花费 ($)",
-                "达标率 (%)",
-                "D0 ROAS (%)",
-                "CPI ($)",
-                "首日付费率 (%)",
-                "CPP ($)",
-                "新注册用户占比 (%)",
-                "付费用户新注册用户占比 (%)",
-            ]
-            html_o1 = generate_pivot_html(
-                df_p3_working,
-                o1_dims,
-                o1_metrics,
-                total_title=total_title,
-            )
-            st.markdown(html_o1, unsafe_allow_html=True)
-
-        # 第一张图指示：表格 2 字段与透视维度重构修正
-        st.markdown(
-            f"##### 📌 表格 2: 优化师-剧目 - 优化方式 & 出价透视表 {suffix_title}"
-        )
-        if not df_p3_working.empty:
-            # 修正后透视维度顺序：优化师 -> 剧目/书籍语言 -> 剧目/书籍名称 -> 剧目/书籍短ID -> 投放平台 -> 操作系统 (广告) -> 推广目标 -> 优化方式 -> 手动出价的金额/系数
-            o2_dims = [
-                "优化师",
-                "剧目/书籍语言",
-                "剧目/书籍名称",
-                "剧目/书籍短ID",
-                "投放平台",
-                "操作系统 (广告)",
-                "推广目标",
-                "优化方式",
-                "手动出价的金额/系数",
-            ]
-            o2_metrics = [
-                "花费 ($)",
-                "达标率 (%)",
-                "D0 ROAS (%)",
-                "CPI ($)",
-                "首日付费率 (%)",
-                "CPP ($)",
-                "新注册用户占比 (%)",
-                "付费用户新注册用户占比 (%)",
-            ]
-            html_o2 = generate_pivot_html(
-                df_p3_working,
-                o2_dims,
-                o2_metrics,
-                total_title=total_title,
-            )
-            st.markdown(html_o2, unsafe_allow_html=True)
-
-        # ---------------------------------------------------------------------
-        # 板块 3: 投放平台 & Pixel 名称数据维度情况
-        # ---------------------------------------------------------------------
-        st.subheader("🎯 板块 3: 投放平台 & Pixel 名称数据维度情况")
-
-        st.markdown(f"##### 📌 Pixel 维度明细汇总表 {suffix_title}")
-        if not df_p3_working.empty:
-            pix_dims = [
-                "剧目/书籍语言",
-                "投放平台",
-                "推广目标",
-                "优化方式",
-                "pixel名称",
-            ]
-            pix_metrics = [
-                "花费 ($)",
-                "达标率 (%)",
-                "D0 ROAS (%)",
-                "CPI ($)",
-                "CPP ($)",
-                "首日付费率 (%)",
-                "新注册用户占比 (%)",
-                "付费用户新注册用户占比 (%)",
-            ]
-            html_pix = generate_pivot_html(
-                df_p3_working,
-                pix_dims,
-                pix_metrics,
-                total_title=total_title,
-            )
-            st.markdown(html_pix, unsafe_allow_html=True)
-
-        # ---------------------------------------------------------------------
-        # 板块 4: 不同语种的账户时区数据透视表
-        # ---------------------------------------------------------------------
-        st.subheader("🌐 板块 4: 不同语种的账户时区数据透视表")
-
-        if not df_p3_working.empty:
-            tz_metrics = [
-                "花费 ($)",
-                "消耗占比 (%)",
-                "达标率 (%)",
-                "D0 ROAS (%)",
-                "CPI ($)",
-                "CPP ($)",
-                "新注册用户占比 (%)",
-                "付费用户新注册用户占比 (%)",
-            ]
-            langs_in_df = df_p3_working["剧目/书籍语言"].unique().tolist()
-
-            for l_idx, lang in enumerate(langs_in_df, start=1):
-                st.markdown(
-                    f"##### 📌 表格 {l_idx}：{lang} - 账户时区数据透视 {suffix_title}"
-                )
-                group_l = df_p3_working[
-                    df_p3_working["剧目/书籍语言"] == lang
-                ]
-                html_tz = generate_pivot_html(
-                    group_l,
-                    ["账户时区分类"],
-                    tz_metrics,
-                    total_title=f"{lang} 小计",
-                )
-                st.markdown(html_tz, unsafe_allow_html=True)
-
-        # ---------------------------------------------------------------------
-        # 板块 5: 当日新老广告效果对比 (精确动态日期计算定义)
-        # ---------------------------------------------------------------------
-        st.subheader(
-            "⏱️ 板块 5: 当日新老广告效果对比 (按每日拆分展平)"
-        )
-
-        if not df_p3_working.empty:
-            df_p5 = df_p3_working.copy()
-
-            # 精准新老广告定义：根据【当前计算日期 (Date)】与【广告创建时间】动态判定
-            def get_dynamic_ad_age(row):
-                try:
-                    cur_date = pd.to_datetime(row["日期_str"])
-                    create_date = pd.to_datetime(row["广告创建时间"])
-                    diff_days = (cur_date - create_date).days
-
-                    # 当日新建广告：创建时间为 Date 或 Date - 1日
-                    if 0 <= diff_days <= 1:
-                        return "当日新建广告"
-                    # 老广告：创建时间为 Date - 2日 及以前
-                    return "老广告"
-                except:
-                    return "老广告"
-
-            if "广告创建时间" in df_p5.columns:
-                df_p5["新老广告分类"] = df_p5.apply(
-                    get_dynamic_ad_age, axis=1
-                )
-            else:
-                df_p5["新老广告分类"] = "老广告"
-
-            ad_metrics = [
-                "花费 ($)",
-                "消耗占比 (%)",
-                "达标率 (%)",
-                "D0 ROAS (%)",
-                "CPI ($)",
-                "CPP ($)",
-                "新注册用户占比 (%)",
-                "付费用户新注册用户占比 (%)",
-            ]
-
-            target_langs = ["繁体中文", "韩语"]
-            for l_idx, lang in enumerate(target_langs, start=1):
-                st.markdown(
-                    f"##### 📌 表格 {l_idx}：{lang} - 当日新老广告效果对比 {suffix_title}"
-                )
-                group_l = df_p5[df_p5["剧目/书籍语言"] == lang]
-                if group_l.empty:
-                    st.info(f"暂无 {lang} 相关数据")
-                    continue
-
-                html_ad = generate_pivot_html(
-                    group_l,
-                    ["日期_str", "新老广告分类"],
-                    ad_metrics,
-                    total_title=f"{lang} 小计",
-                )
-                st.markdown(html_ad, unsafe_allow_html=True)
-
-        # ---------------------------------------------------------------------
-        # 板块 6: 不同操作系统数据维度情况
-        # ---------------------------------------------------------------------
-        st.subheader("💻 板块 6: 不同操作系统数据维度情况")
-
-        st.markdown(
-            f"##### 📌 表格 1: 操作系统数据汇总 {suffix_title}"
-        )
-        if not df_p3_working.empty:
+        # 表格 5: 投放平台 × OS端透视明细表
+        st.subheader("💻 表格 5: 投放平台 × OS端透视明细表")
+        if not df_filtered.empty:
             os1_dims = [
                 "剧目/书籍语言",
                 "投放平台",
@@ -1898,52 +1146,923 @@ if uploaded_file is not None:
                 "付费用户新注册用户占比 (%)",
             ]
             html_os1 = generate_pivot_html(
-                df_p3_working,
-                os1_dims,
-                os1_metrics,
-                total_title=total_title,
+                df_filtered, os1_dims, os1_metrics, total_title="大盘总计 / OS汇总"
             )
             st.markdown(html_os1, unsafe_allow_html=True)
 
-        st.markdown(
-            f"##### 📌 表格 2: 操作系统 & 广告优化方式数据汇总 {suffix_title}"
+    # -------------------------------------------------------------------------
+    # Sheet 3: 第三部分：投放维度拆分
+    # -------------------------------------------------------------------------
+    with sheet3:
+        part2_tab1, part2_tab2 = st.tabs(
+            ["📅 当日数据 (最新一日)", "🌐 全量总计 (所有时间汇总)"]
         )
-        if not df_p3_working.empty:
-            os2_dims = [
-                "剧目/书籍语言",
-                "投放平台",
-                "pixel名称",
-                "操作系统 (广告)",
-                "操作系统 (用户)",
-                "推广目标",
-                "优化方式",
-                "手动出价的金额/系数",
-            ]
-            os2_metrics = [
+
+        def render_part2_content(df_p2_working, is_daily_mode):
+            time_suffix = f"(当日明细 - {latest_date})" if is_daily_mode else "(全量汇总)"
+
+            if df_p2_working.empty:
+                st.warning("无可展示的数据")
+                return
+
+            type_col_name = "漫剧类型" if "漫剧类型" in df_p2_working.columns else "书籍类型"
+
+            st.subheader(f"📊 表格 1：具体投放剧目类型情况拆分表 {time_suffix}")
+            t1_dims = ["剧目/书籍语言", "版权来源", type_col_name]
+            t1_metrics = [
                 "花费 ($)",
                 "达标率 (%)",
                 "D0 ROAS (%)",
                 "CPI ($)",
                 "首日付费率 (%)",
                 "CPP ($)",
+                "ARPPU ($)",
                 "新注册用户占比 (%)",
                 "付费用户新注册用户占比 (%)",
             ]
-            html_os2 = generate_pivot_html(
-                df_p3_working,
-                os2_dims,
-                os2_metrics,
-                total_title=total_title,
+            html_t1 = generate_pivot_html(
+                df_p2_working, t1_dims, t1_metrics, total_title="类型拆分大盘汇总"
             )
-            st.markdown(html_os2, unsafe_allow_html=True)
+            st.markdown(html_t1, unsafe_allow_html=True)
 
-    # 选项卡 1：📅 当日数据 (最新一日) -> 强行过滤为最新一天数据
-    with part3_tab1:
-        df_p3_daily = df_filtered[
-            df_filtered["日期_str"] == latest_date
-        ].copy()
-        render_part3_content(df_p3_daily, is_daily_mode=True)
+            st.subheader(f"🎬 表格 2：具体投放剧目情况表 {time_suffix}")
+            t2_dims = ["剧目/书籍语言", "剧目/书籍名称", "剧目/书籍短ID", "版权来源"]
+            if "剧目/书籍中文名称" in df_p2_working.columns:
+                t2_dims.insert(2, "剧目/书籍中文名称")
 
-    # 选项卡 2：🌐 全量总计 (所有时间汇总) -> 底表全量数据
-    with part3_tab2:
-        render_part3_content(df_filtered, is_daily_mode=False)
+            t2_metrics = [
+                "花费 ($)",
+                "达标率 (%)",
+                "D0 ROAS (%)",
+                "CPI ($)",
+                "首日付费率 (%)",
+                "CPP ($)",
+                "ARPPU ($)",
+                "新注册用户占比 (%)",
+                "付费用户新注册用户占比 (%)",
+            ]
+            html_t2 = generate_pivot_html(
+                df_p2_working, t2_dims, t2_metrics, total_title="剧目成效大盘汇总"
+            )
+            st.markdown(html_t2, unsafe_allow_html=True)
+
+            st.subheader(f"📈 表格 3: 具体投放剧目每日数据情况表 {time_suffix}")
+            t3_dims = ["剧目/书籍语言", "剧目/书籍名称", "剧目/书籍短ID", "日期_str"]
+            if "剧目/书籍中文名称" in df_p2_working.columns:
+                t3_dims.insert(2, "剧目/书籍中文名称")
+
+            t3_metrics = [
+                "花费 ($)",
+                "达标率 (%)",
+                "D0 ROAS (%)",
+                "CPI ($)",
+                "首日付费率 (%)",
+                "CPP ($)",
+                "ARPPU ($)",
+                "新注册用户占比 (%)",
+                "付费用户新注册用户占比 (%)",
+            ]
+            html_t3 = generate_pivot_html(
+                df_p2_working, t3_dims, t3_metrics, total_title="剧目每日趋势汇总"
+            )
+            st.markdown(html_t3, unsafe_allow_html=True)
+
+        with part2_tab1:
+            df_p2_daily = df_filtered[
+                df_filtered["日期_str"] == latest_date
+            ].copy()
+            render_part2_content(df_p2_daily, is_daily_mode=True)
+
+        with part2_tab2:
+            render_part2_content(df_filtered, is_daily_mode=False)
+
+    # -------------------------------------------------------------------------
+    # Sheet 4: 第四部分：优化方式&出价深度拆分
+    # -------------------------------------------------------------------------
+    with sheet4:
+        part3_tab1, part3_tab2 = st.tabs(
+            ["📅 当日数据 (最新一日)", "🌐 全量总计 (所有时间汇总)"]
+        )
+
+        def render_part3_content(df_p3_working, is_daily_mode):
+            suffix_title = "(当日实况)" if is_daily_mode else "(全量总计)"
+            total_title = (
+                f"大盘总计 / 当日实况汇总"
+                if is_daily_mode
+                else f"大盘总计 / 全量总计汇总"
+            )
+
+            if is_daily_mode:
+                st.info(
+                    f"📌 当前展示【最新一日 {latest_date}】的数据聚合透视"
+                )
+            else:
+                st.info("🌐 当前展示【底表所有日期】的全量数据聚合透视")
+
+            # 板块 1: 渠道维度情况
+            st.subheader("📊 板块 1: 渠道维度情况 (FB / TT)")
+
+            st.markdown(
+                f"##### 📌 表格 1: 投放平台指标汇总与消耗占比透视 {suffix_title}"
+            )
+            if not df_p3_working.empty:
+                c1_metrics = [
+                    "花费 ($)",
+                    "花费占比 (%)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_c1 = generate_pivot_html(
+                    df_p3_working,
+                    ["剧目/书籍语言", "优化师", "投放平台"],
+                    c1_metrics,
+                    total_title=total_title,
+                )
+                st.markdown(html_c1, unsafe_allow_html=True)
+
+            # 板块 2: 优化方式维度情况
+            st.subheader("⚙️ 板块 2: 优化方式维度情况")
+
+            st.markdown(
+                f"##### 📌 表格 1: 大盘 - 优化方式 & 出价透视表 {suffix_title}"
+            )
+            if not df_p3_working.empty:
+                o1_dims = [
+                    "剧目/书籍语言",
+                    "投放平台",
+                    "推广目标",
+                    "优化方式",
+                    "手动出价的金额/系数",
+                ]
+                o1_metrics = [
+                    "花费 ($)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_o1 = generate_pivot_html(
+                    df_p3_working,
+                    o1_dims,
+                    o1_metrics,
+                    total_title=total_title,
+                )
+                st.markdown(html_o1, unsafe_allow_html=True)
+
+            # 表格 2: 极效高 ROAS 优化方式 & 出价透视表
+            st.markdown(
+                f'##### 📌 表格 2: 极效高 ROAS 优化方式 & 出价透视表 (花费>$100 且 达标率>=80%) <span style="color:red; font-weight:bold; font-size:14px;">(💡 广告方向优化策略，可查看此表！)</span> {suffix_title}',
+                unsafe_allow_html=True,
+            )
+            if not df_p3_working.empty:
+                tot_p3_cost = df_p3_working["花费"].sum()
+                all_strategy_list = []
+
+                for (d_name, l_v, p_v, t_v, m_v, b_v), sub_g in df_p3_working.groupby(
+                    [
+                        "剧目/书籍名称",
+                        "剧目/书籍语言",
+                        "投放平台",
+                        "推广目标",
+                        "优化方式",
+                        "手动出价的金额/系数",
+                    ]
+                ):
+                    m_sub = compute_metrics(sub_g)
+                    c_ratio = (m_sub["花费"] / tot_p3_cost * 100) if tot_p3_cost > 0 else 0
+                    all_strategy_list.append(
+                        {
+                            "key": (l_v, p_v, t_v, m_v, b_v),
+                            "剧目/书籍名称": d_name,
+                            "剧目/书籍语言": l_v,
+                            "投放平台": p_v,
+                            "推广目标": t_v,
+                            "优化方式": m_v,
+                            "手动出价的金额/系数": b_v,
+                            "花费占比": c_ratio,
+                            "达标率": m_sub["达标率"],
+                            "花费": m_sub["花费"],
+                        }
+                    )
+
+                high_roas_keys = [
+                    item["key"]
+                    for item in all_strategy_list
+                    if item["花费"] > 100 and item["达标率"] >= 0.80
+                ]
+
+                if high_roas_keys:
+                    df_high_roas = df_p3_working[
+                        df_p3_working.set_index(
+                            [
+                                "剧目/书籍语言",
+                                "投放平台",
+                                "推广目标",
+                                "优化方式",
+                                "手动出价的金额/系数",
+                            ]
+                        ).index.isin(high_roas_keys)
+                    ].copy()
+
+                    o2_dims = [
+                        "剧目/书籍语言",
+                        "投放平台",
+                        "推广目标",
+                        "优化方式",
+                        "手动出价的金额/系数",
+                    ]
+                    o2_metrics = [
+                        "花费 ($)",
+                        "达标率 (%)",
+                        "D0 ROAS (%)",
+                        "CPI ($)",
+                        "首日付费率 (%)",
+                        "CPP ($)",
+                        "新注册用户占比 (%)",
+                        "付费用户新注册用户占比 (%)",
+                    ]
+                    html_o2 = generate_pivot_html(
+                        df_high_roas,
+                        o2_dims,
+                        o2_metrics,
+                        total_title="高ROAS策略大盘汇总",
+                    )
+                    st.markdown(html_o2, unsafe_allow_html=True)
+                else:
+                    st.info("当前条件下，暂无同时满足【花费 > $100 且 达标率 >= 80%】的高 ROAS 出价策略。")
+
+                # 💡 策略提效看板 1: 筛选阈值修正 (>5% 不达标止损预警)
+                st.markdown("##### 💡 广告方向策略提效看板")
+                df_all_summary = pd.DataFrame(all_strategy_list)
+
+                with st.container(border=True):
+                    card1_tab1, card1_tab2 = st.tabs(
+                        [
+                            "✅ 达标方向拓展策略 (达标率>80%, 花费占比>5%)",
+                            "🚨 不达标方向预算缩减 (达标率<70%, 花费占比>5%)",
+                        ]
+                    )
+
+                    with card1_tab1:
+                        df_good = df_all_summary[
+                            (df_all_summary["达标率"] > 0.80) & (df_all_summary["花费占比"] > 5.0)
+                        ].sort_values(by="花费占比", ascending=False)
+
+                        if not df_good.empty:
+                            st.dataframe(
+                                df_good[
+                                    [
+                                        "剧目/书籍名称",
+                                        "投放平台",
+                                        "推广目标",
+                                        "优化方式",
+                                        "手动出价的金额/系数",
+                                        "花费占比",
+                                    ]
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "花费占比": st.column_config.ProgressColumn(
+                                        "花费占比 (%)",
+                                        help="拓展消耗占比进度条",
+                                        format="%.2f%%",
+                                        min_value=0,
+                                        max_value=100,
+                                    )
+                                },
+                            )
+                        else:
+                            st.info("暂无符合【达标率>80% 且 花费占比>5%】的拓展方向策略。")
+
+                    with card1_tab2:
+                        df_bad = df_all_summary[
+                            (df_all_summary["达标率"] < 0.70) & (df_all_summary["花费占比"] > 5.0)
+                        ].sort_values(by="花费占比", ascending=False)
+
+                        if not df_bad.empty:
+                            st.markdown(
+                                '<span style="color:red; font-weight:bold;">🚨 以下方向达标率低于 70% 且消耗超 5%，建议立即下调预算或止损！</span>',
+                                unsafe_allow_html=True,
+                            )
+                            st.dataframe(
+                                df_bad[
+                                    [
+                                        "剧目/书籍名称",
+                                        "投放平台",
+                                        "推广目标",
+                                        "优化方式",
+                                        "手动出价的金额/系数",
+                                        "花费占比",
+                                    ]
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "花费占比": st.column_config.ProgressColumn(
+                                        "花费占比 (%)",
+                                        help="低效浪费占比进度条",
+                                        format="%.2f%%",
+                                        min_value=0,
+                                        max_value=100,
+                                    )
+                                },
+                            )
+                        else:
+                            st.success("🎉 未发现【达标率<70% 且 花费占比>5%】的低效浪费方向！")
+
+            # 板块 3: 投放平台 & Pixel 名称数据维度情况
+            st.subheader("🎯 板块 3: 投放平台 & Pixel 名称数据维度情况")
+
+            st.markdown(f"##### 📌 表格 1: Pixel 维度明细汇总表 {suffix_title}")
+            if not df_p3_working.empty:
+                pix1_dims = [
+                    "剧目/书籍语言",
+                    "投放平台",
+                    "推广目标",
+                    "优化方式",
+                    "pixel名称",
+                ]
+                pix_metrics = [
+                    "花费 ($)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "CPP ($)",
+                    "首日付费率 (%)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_pix1 = generate_pivot_html(
+                    df_p3_working,
+                    pix1_dims,
+                    pix_metrics,
+                    total_title=total_title,
+                )
+                st.markdown(html_pix1, unsafe_allow_html=True)
+
+            type_col_name = (
+                "漫剧类型" if "漫剧类型" in df_p3_working.columns else "书籍类型"
+            )
+            st.markdown(f"##### 📌 表格 2: 平台/版权/类型 & Pixel 透视表 {suffix_title}")
+            if not df_p3_working.empty:
+                pix2_dims = [
+                    "剧目/书籍语言",
+                    "投放平台",
+                    "版权来源",
+                    type_col_name,
+                    "pixel名称",
+                ]
+                html_pix2 = generate_pivot_html(
+                    df_p3_working,
+                    pix2_dims,
+                    pix_metrics,
+                    total_title=total_title,
+                )
+                st.markdown(html_pix2, unsafe_allow_html=True)
+
+            # 板块 4: 不同语种的账户时区数据透视表
+            st.subheader("🌐 板块 4: 不同语种的账户时区数据透视表")
+
+            if not df_p3_working.empty:
+                tz_metrics = [
+                    "花费 ($)",
+                    "消耗占比 (%)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "CPP ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                langs_in_df = df_p3_working["剧目/书籍语言"].unique().tolist()
+
+                for l_idx, lang in enumerate(langs_in_df, start=1):
+                    st.markdown(
+                        f"##### 📌 表格 {l_idx}：{lang} - 账户时区数据透视 {suffix_title}"
+                    )
+                    group_l = df_p3_working[
+                        df_p3_working["剧目/书籍语言"] == lang
+                    ]
+                    html_tz = generate_pivot_html(
+                        group_l,
+                        ["账户时区"],
+                        tz_metrics,
+                        total_title=f"{lang} 小计",
+                    )
+                    st.markdown(html_tz, unsafe_allow_html=True)
+
+            # 板块 5: 当日新老广告效果对比
+            st.subheader("⏱️ 板块 5: 当日新老广告效果对比 (按每日拆分展平)")
+
+            if not df_p3_working.empty:
+                df_p5 = df_p3_working.copy()
+
+                def get_dynamic_ad_age(row):
+                    try:
+                        cur_date = pd.to_datetime(row["日期_str"])
+                        create_date = pd.to_datetime(row["广告创建时间"])
+                        diff_days = (cur_date - create_date).days
+
+                        if 0 <= diff_days <= 1:
+                            return "当日新建广告"
+                        return "老广告"
+                    except:
+                        return "老广告"
+
+                if "广告创建时间" in df_p5.columns:
+                    df_p5["新老广告分类"] = df_p5.apply(
+                        get_dynamic_ad_age, axis=1
+                    )
+                else:
+                    df_p5["新老广告分类"] = "老广告"
+
+                ad_metrics = [
+                    "花费 ($)",
+                    "消耗占比 (%)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "CPP ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+
+                target_langs = ["繁体中文", "韩语"]
+                for l_idx, lang in enumerate(target_langs, start=1):
+                    st.markdown(
+                        f"##### 📌 表格 {l_idx}：{lang} - 当日新老广告效果对比 {suffix_title}"
+                    )
+                    group_l = df_p5[df_p5["剧目/书籍语言"] == lang]
+                    if group_l.empty:
+                        st.info(f"暂无 {lang} 相关数据")
+                        continue
+
+                    html_ad = generate_pivot_html(
+                        group_l,
+                        ["日期_str", "新老广告分类"],
+                        ad_metrics,
+                        total_title=f"{lang} 小计",
+                    )
+                    st.markdown(html_ad, unsafe_allow_html=True)
+
+            # 板块 6: 结构调整与新增表格 2
+            st.subheader("💻 板块 6: 不同操作系统数据维度情况")
+
+            st.markdown(
+                f"##### 📌 表格 1: 操作系统 & 广告优化方式数据汇总 {suffix_title}"
+            )
+            if not df_p3_working.empty:
+                os2_dims = [
+                    "剧目/书籍语言",
+                    "投放平台",
+                    "pixel名称",
+                    "操作系统 (广告)",
+                    "操作系统 (用户)",
+                    "推广目标",
+                    "优化方式",
+                    "手动出价的金额/系数",
+                ]
+                os2_metrics = [
+                    "花费 ($)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+                html_os1 = generate_pivot_html(
+                    df_p3_working,
+                    os2_dims,
+                    os2_metrics,
+                    total_title=total_title,
+                )
+                st.markdown(html_os1, unsafe_allow_html=True)
+
+            st.markdown(
+                f'##### 📌 表格 2: 达标 操作系统 & 广告优化方式数据汇总 <span style="color:red; font-weight:bold; font-size:14px;">(💡 最全Pixel+优化策略，可查看此表！)</span> {suffix_title}',
+                unsafe_allow_html=True,
+            )
+            if not df_p3_working.empty:
+                qualified_os_items = []
+                for keys_combo, sub_g in df_p3_working.groupby(
+                    [
+                        "剧目/书籍语言",
+                        "投放平台",
+                        "pixel名称",
+                        "操作系统 (广告)",
+                        "操作系统 (用户)",
+                        "推广目标",
+                        "优化方式",
+                        "手动出价的金额/系数",
+                    ]
+                ):
+                    m_sub = compute_metrics(sub_g)
+                    if m_sub["花费"] > 100 and m_sub["达标率"] >= 0.80:
+                        qualified_os_items.append(keys_combo)
+
+                if qualified_os_items:
+                    df_qualified_os = df_p3_working[
+                        df_p3_working.set_index(
+                            [
+                                "剧目/书籍语言",
+                                "投放平台",
+                                "pixel名称",
+                                "操作系统 (广告)",
+                                "操作系统 (用户)",
+                                "推广目标",
+                                "优化方式",
+                                "手动出价的金额/系数",
+                            ]
+                        ).index.isin(qualified_os_items)
+                    ].copy()
+
+                    html_os2 = generate_pivot_html(
+                        df_qualified_os,
+                        os2_dims,
+                        os2_metrics,
+                        total_title="达标OS与策略大盘汇总",
+                    )
+                    st.markdown(html_os2, unsafe_allow_html=True)
+                else:
+                    st.info("当前条件下，暂无同时满足【花费 > $100 且 D0 达标率 >= 80%】的操作系统优化策略。")
+
+            # 💡 最全 Pixel + 优化策略提效看板
+            st.markdown("##### 💡 最全 Pixel + 优化策略提效看板")
+            tot_p3_cost = df_p3_working["花费"].sum()
+            all_pixel_strategy_list = []
+
+            for (d_name, pix_v, plat_v, tgt_v, mode_v, bid_v), sub_g in df_p3_working.groupby(
+                [
+                    "剧目/书籍名称",
+                    "pixel名称",
+                    "投放平台",
+                    "推广目标",
+                    "优化方式",
+                    "手动出价的金额/系数",
+                ]
+            ):
+                m_sub = compute_metrics(sub_g)
+                c_ratio = (m_sub["花费"] / tot_p3_cost * 100) if tot_p3_cost > 0 else 0
+                all_pixel_strategy_list.append(
+                    {
+                        "剧目/书籍名称": d_name,
+                        "pixel名称": pix_v,
+                        "投放平台": plat_v,
+                        "推广目标": tgt_v,
+                        "优化方式": mode_v,
+                        "手动出价的金额/系数": bid_v,
+                        "花费占比": c_ratio,
+                        "达标率": m_sub["达标率"],
+                    }
+                )
+
+            if all_pixel_strategy_list:
+                df_pixel_summary = pd.DataFrame(all_pixel_strategy_list)
+
+                with st.container(border=True):
+                    card2_tab1, card2_tab2 = st.tabs(
+                        [
+                            "✅ 达标 Pixel+策略 (达标率>80%, 花费占比>5%)",
+                            "🚨 不达标方向预算缩减 (达标率<70%, 花费占比>5%)",
+                        ]
+                    )
+
+                    with card2_tab1:
+                        df_pix_good = df_pixel_summary[
+                            (df_pixel_summary["达标率"] > 0.80)
+                            & (df_pixel_summary["花费占比"] > 5.0)
+                        ].sort_values(by="花费占比", ascending=False)
+
+                        if not df_pix_good.empty:
+                            st.dataframe(
+                                df_pix_good[
+                                    [
+                                        "剧目/书籍名称",
+                                        "pixel名称",
+                                        "投放平台",
+                                        "推广目标",
+                                        "优化方式",
+                                        "手动出价的金额/系数",
+                                        "花费占比",
+                                    ]
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "花费占比": st.column_config.ProgressColumn(
+                                        "花费占比 (%)",
+                                        help="Pixel 拓展消耗占比进度条",
+                                        format="%.2f%%",
+                                        min_value=0,
+                                        max_value=100,
+                                    )
+                                },
+                            )
+                        else:
+                            st.info("暂无符合【达标率>80% 且 花费占比>5%】的优质 Pixel 策略。")
+
+                    with card2_tab2:
+                        df_pix_bad = df_pixel_summary[
+                            (df_pixel_summary["达标率"] < 0.70)
+                            & (df_pixel_summary["花费占比"] > 5.0)
+                        ].sort_values(by="花费占比", ascending=False)
+
+                        if not df_pix_bad.empty:
+                            st.markdown(
+                                '<span style="color:red; font-weight:bold;">🚨 以下 Pixel 组合达标率低于 70% 且消耗超 5%，请立刻更换或关闭 Pixel！</span>',
+                                unsafe_allow_html=True,
+                            )
+                            st.dataframe(
+                                df_pix_bad[
+                                    [
+                                        "剧目/书籍名称",
+                                        "pixel名称",
+                                        "投放平台",
+                                        "推广目标",
+                                        "优化方式",
+                                        "手动出价的金额/系数",
+                                        "花费占比",
+                                    ]
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "花费占比": st.column_config.ProgressColumn(
+                                        "花费占比 (%)",
+                                        help="低效 Pixel 占用进度条",
+                                        format="%.2f%%",
+                                        min_value=0,
+                                        max_value=100,
+                                    )
+                                },
+                            )
+                        else:
+                            st.success("🎉 未发现【达标率<70% 且 花费占比>5%】的低效 Pixel 组合！")
+
+        with part3_tab1:
+            df_p3_daily = df_filtered[
+                df_filtered["日期_str"] == latest_date
+            ].copy()
+            render_part3_content(df_p3_daily, is_daily_mode=True)
+
+        with part3_tab2:
+            render_part3_content(df_filtered, is_daily_mode=False)
+
+    # -------------------------------------------------------------------------
+    # Sheet 5: 第五部分：单剧目深度透视
+    # -------------------------------------------------------------------------
+    with sheet5:
+        if len(sel_dramas) == 1:
+            single_drama_id = sel_dramas[0]
+            df_single = df[df["剧目/书籍短ID"].astype(str) == single_drama_id].copy()
+
+            if not df_single.empty:
+                s_name = df_single["剧目/书籍名称"].iloc[0]
+                s_zh = df_single.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
+                s_first_date = df_single["首次投放_str"].min()
+
+                st.header(
+                    f"🎯 {s_name}-{s_zh}-{single_drama_id} 深度透视 (首投时间：{s_first_date})"
+                )
+
+                p5_metrics = [
+                    "花费 ($)",
+                    "达标率 (%)",
+                    "D0 ROAS (%)",
+                    "CPI ($)",
+                    "首日付费率 (%)",
+                    "CPP ($)",
+                    "ARPPU ($)",
+                    "新注册用户占比 (%)",
+                    "付费用户新注册用户占比 (%)",
+                ]
+
+                # 📊 表格 1: 投放平台数据拆分对比
+                st.subheader("📊 表格 1: 投放平台数据拆分对比")
+                html_p5_1 = generate_pivot_html(
+                    df_single, ["投放平台"], p5_metrics, total_title="剧目平台大盘汇总"
+                )
+                st.markdown(html_p5_1, unsafe_allow_html=True)
+
+                # 👨‍💻 表格 2: 优化师数据对比
+                st.subheader("👨‍💻 表格 2: 优化师数据对比")
+                html_p5_2 = generate_pivot_html(
+                    df_single, ["优化师"], p5_metrics, total_title="剧目优化师大盘汇总"
+                )
+                st.markdown(html_p5_2, unsafe_allow_html=True)
+
+                # 🎯 表格 3: 投放平台 × Pixel名称 成效透视对比
+                st.subheader("🎯 表格 3: 投放平台 × Pixel名称 成效透视对比")
+                html_p5_3 = generate_pivot_html(
+                    df_single,
+                    ["投放平台", "pixel名称"],
+                    p5_metrics,
+                    total_title="剧目Pixel大盘汇总",
+                )
+                st.markdown(html_p5_3, unsafe_allow_html=True)
+
+                # 🚀 表格 4: 投放平台 × 推广目标 拆分对比
+                st.subheader("🚀 表格 4: 投放平台 × 推广目标 拆分对比")
+                html_p5_4 = generate_pivot_html(
+                    df_single,
+                    ["投放平台", "推广目标"],
+                    p5_metrics,
+                    total_title="剧目目标大盘汇总",
+                )
+                st.markdown(html_p5_4, unsafe_allow_html=True)
+
+                # 🔬 表格 5: 细分全量深度透视
+                st.subheader(
+                    "🔬 表格 5: 细分全量深度透视（平台×广告类型×pixel×目标×方式×出价）"
+                )
+                p5_5_dims = [
+                    "投放平台",
+                    "广告类型",
+                    "pixel名称",
+                    "操作系统 (广告)",
+                    "推广目标",
+                    "优化方式",
+                    "手动出价的金额/系数",
+                ]
+                html_p5_5 = generate_pivot_html(
+                    df_single, p5_5_dims, p5_metrics, total_title="剧目全量细分汇总"
+                )
+                st.markdown(html_p5_5, unsafe_allow_html=True)
+
+                # 🔥 表格 6: 优化策略方向（达标率>80%）
+                st.subheader("🔥 表格 6: 优化策略方向（花费>$100 且 达标率>=80%）")
+                p5_6_items = []
+                for keys_combo, sub_g in df_single.groupby(p5_5_dims):
+                    m_combo = compute_metrics(sub_g)
+                    if m_combo["花费"] > 100 and m_combo["达标率"] >= 0.80:
+                        p5_6_items.append(keys_combo)
+
+                if p5_6_items:
+                    df_p5_qualified = df_single[
+                        df_single.set_index(p5_5_dims).index.isin(p5_6_items)
+                    ].copy()
+
+                    html_p5_6 = generate_pivot_html(
+                        df_p5_qualified,
+                        p5_5_dims,
+                        p5_metrics,
+                        total_title="达标策略方向大盘汇总",
+                    )
+                    st.markdown(html_p5_6, unsafe_allow_html=True)
+                else:
+                    st.info("当前剧目暂无满足【花费 > $100 且 达标率 >= 80%】的高高效策略方向。")
+        else:
+            st.info("💡 提示：请在左侧侧边栏【🔍 搜索/筛选 推广剧目/书籍短ID】中**仅选择单个剧目**，即可在此处查阅该剧目的单剧目深度透视分析！")
+
+    # -------------------------------------------------------------------------
+    # Sheet 6: 第六部分：素材分析
+    # -------------------------------------------------------------------------
+    with sheet6:
+        mat_tab1, mat_tab2 = st.tabs(
+            ["📅 当日数据 (最新一日)", "🌐 全量总计 (所有时间汇总)"]
+        )
+
+        def render_material_analysis(df_mat_working, is_daily_mode):
+            time_suffix = f"(当日明细 - {latest_date})" if is_daily_mode else "(全量汇总)"
+
+            if df_mat_working.empty:
+                st.warning("当前没有可分析的素材数据")
+                return
+
+            qualified_mat_keys = []
+            mat_group_dims = [
+                "剧目/书籍语言",
+                "剧目/书籍名称",
+                "剧目/书籍短ID",
+                "素材名称",
+            ]
+
+            for keys_combo, sub_mat in df_mat_working.groupby(mat_group_dims):
+                m_mat = compute_metrics(sub_mat)
+                if m_mat["达标率"] >= 0.80 and m_mat["花费"] > 0:
+                    qualified_mat_keys.append(keys_combo)
+
+            if qualified_mat_keys:
+                df_mat_qualified = df_mat_working[
+                    df_mat_working.set_index(mat_group_dims).index.isin(qualified_mat_keys)
+                ].copy()
+
+                # 带【剧目信息抬头】的一键复制文本生成
+                copy_text_lines = []
+                for (s_lang, s_name, s_id), drama_mat_sub in df_mat_qualified.groupby(
+                    ["剧目/书籍语言", "剧目/书籍名称", "剧目/书籍短ID"]
+                ):
+                    zh_title = drama_mat_sub.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
+                    header_line = f"{s_name} - {zh_title} - {s_id}"
+                    copy_text_lines.append(header_line)
+                    copy_text_lines.append("达标素材清单 (一行一个):")
+
+                    m_names = sorted(drama_mat_sub["素材名称"].dropna().unique().tolist())
+                    for m_n in m_names:
+                        copy_text_lines.append(m_n)
+                    copy_text_lines.append("")
+
+                mat_full_block = "\n".join(copy_text_lines)
+
+                # UI 卡片化
+                st.markdown(
+                    f'<div class="material-copy-card"><div class="material-header-title">📋 复制达标素材名称列表 (带剧目信息抬头)</div>',
+                    unsafe_allow_html=True,
+                )
+                with st.expander("点击展开全量达标素材清单 (可点击右上角图标一键复制)"):
+                    st.text_area(
+                        "全量达标素材文本框:",
+                        value=mat_full_block,
+                        height=220,
+                        help="直接全选 Ctrl+A 复制，或点击框右上角复制文本",
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                st.subheader(f"📊 表格 1: 具体投放剧目素材拆分表 (D0达标率>=80%) {time_suffix}")
+
+                mat_rows = []
+                for keys_combo, drama_mat_sub in df_mat_qualified.groupby(mat_group_dims):
+                    m_res = compute_metrics(drama_mat_sub)
+                    s_zh = drama_mat_sub.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
+                    mat_rows.append(
+                        {
+                            "剧目/书籍语言": keys_combo[0],
+                            "剧目/书籍名称": keys_combo[1],
+                            "中文推广剧目": s_zh,
+                            "剧目ID": keys_combo[2],
+                            "素材名称": keys_combo[3],
+                            "花费 ($)": m_res["花费"],
+                            "D0 达标率 (%)": m_res["达标率"],
+                            "首日付费用户数": int(m_res["首日付费用户数"]),
+                            "D0 ROAS (%)": m_res["D0 ROAS"],
+                            "CPI ($)": m_res["CPI"],
+                            "首日付费率 (%)": m_res["首日付费率"],
+                            "首日激活用户数": int(m_res["首日激活用户数"]),
+                            "新注册用户占比 (%)": m_res["新注册用户占比"],
+                            "付费用户新注册用户占比 (%)": m_res["付费用户新注册用户占比"],
+                        }
+                    )
+
+                df_mat_display = pd.DataFrame(mat_rows).sort_values(
+                    by="花费 ($)", ascending=False
+                )
+
+                # 使用交互式 DataFrame，支持鼠标框选与 Ctrl+C 复制
+                st.dataframe(
+                    df_mat_display,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "花费 ($)": st.column_config.NumberColumn(
+                            "花费 ($)", format="$%.2f"
+                        ),
+                        "D0 达标率 (%)": st.column_config.NumberColumn(
+                            "D0 达标率 (%)", format="%.2f%%"
+                        ),
+                        "首日付费用户数": st.column_config.NumberColumn(
+                            "首日付费用户数", format="%d"
+                        ),
+                        "D0 ROAS (%)": st.column_config.NumberColumn(
+                            "D0 ROAS (%)", format="%.2f%%"
+                        ),
+                        "CPI ($)": st.column_config.NumberColumn(
+                            "CPI ($)", format="$%.2f"
+                        ),
+                        "首日付费率 (%)": st.column_config.NumberColumn(
+                            "首日付费率 (%)", format="%.2f%%"
+                        ),
+                        "首日激活用户数": st.column_config.NumberColumn(
+                            "首日激活用户数", format="%d"
+                        ),
+                        "新注册用户占比 (%)": st.column_config.NumberColumn(
+                            "新注册用户占比 (%)", format="%.2f%%"
+                        ),
+                        "付费用户新注册用户占比 (%)": st.column_config.NumberColumn(
+                            "付费用户新注册用户占比 (%)", format="%.2f%%"
+                        ),
+                    },
+                )
+            else:
+                st.info("当前时间窗口内，暂无【D0 达标率 >= 80%】的达标素材。")
+
+        with mat_tab1:
+            df_mat_daily = df_filtered[
+                df_filtered["日期_str"] == latest_date
+            ].copy()
+            render_material_analysis(df_mat_daily, is_daily_mode=True)
+
+        with mat_tab2:
+            render_material_analysis(df_filtered, is_daily_mode=False)
