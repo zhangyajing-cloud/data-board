@@ -815,7 +815,7 @@ if uploaded_file is not None:
             st.info("💡 提示：请在左侧侧边栏【🔍 搜索/筛选 推广剧目/书籍短ID】中**仅选择单个剧目**，即可在此处查阅该剧目的单剧目深度透视分析！")
 
     # -------------------------------------------------------------------------
-    # Sheet 6: 第六部分：素材分析 (百分比格式化直刷修复)
+    # Sheet 6: 第六部分：素材分析 (【 Bug 修复】：纯数值排序 + 硬性过滤 >= 80%)
     # -------------------------------------------------------------------------
     with sheet6:
         mat_tab1, mat_tab2 = st.tabs(["📅 当日数据 (最新一日)", "🌐 全量总计 (所有时间汇总)"])
@@ -826,45 +826,23 @@ if uploaded_file is not None:
                 st.warning("当前没有可分析的素材数据")
                 return
 
-            qualified_mat_keys = []
             mat_group_dims = ["剧目/书籍语言", "剧目/书籍名称", "剧目/书籍短ID", "素材名称"]
+            raw_rows = []
 
             for keys_combo, sub_mat in df_mat_working.groupby(mat_group_dims):
-                m_mat = compute_metrics(sub_mat)
-                if m_mat["达标率"] >= 0.80 and m_mat["花费"] > 0:
-                    qualified_mat_keys.append(keys_combo)
-
-            if qualified_mat_keys:
-                df_mat_qualified = df_mat_working[df_mat_working.set_index(mat_group_dims).index.isin(qualified_mat_keys)].copy()
-
-                copy_text_lines = []
-                for (s_lang, s_name, s_id), drama_mat_sub in df_mat_qualified.groupby(["剧目/书籍语言", "剧目/书籍名称", "剧目/书籍短ID"]):
-                    zh_title = drama_mat_sub.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
-                    copy_text_lines.append(f"{s_name} - {zh_title} - {s_id}\n达标素材清单 (一行一个):")
-                    for m_n in sorted(drama_mat_sub["素材名称"].dropna().unique().tolist()):
-                        copy_text_lines.append(m_n)
-                    copy_text_lines.append("")
-
-                st.markdown('<div class="material-copy-card"><div class="material-header-title">📋 复制达标素材名称列表 (带剧目信息抬头)</div>', unsafe_allow_html=True)
-                with st.expander("点击展开全量达标素材清单"):
-                    st.text_area("全量达标素材文本框:", value="\n".join(copy_text_lines), height=220)
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                st.subheader(f"📊 表格 1: 具体投放剧目素材拆分表 (D0达标率>=80%) {time_suffix}")
-
-                mat_rows = []
-                for keys_combo, drama_mat_sub in df_mat_qualified.groupby(mat_group_dims):
-                    m_res = compute_metrics(drama_mat_sub)
-                    s_zh = drama_mat_sub.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
-                    
-                    mat_rows.append({
+                m_res = compute_metrics(sub_mat)
+                
+                # 📌 1. 硬性逻辑过滤：必须同时满足 花费 > 0 且 达标率 >= 80% (即 0.80)
+                if m_res["花费"] > 0 and m_res["达标率"] >= 0.80:
+                    s_zh = sub_mat.get("剧目/书籍中文名称", pd.Series(["-"])).iloc[0]
+                    raw_rows.append({
+                        "raw_cost": m_res["花费"],  # 存入纯数值，专供高精度排序
+                        "raw_d0": m_res["达标率"],
                         "剧目/书籍语言": keys_combo[0],
                         "剧目/书籍名称": keys_combo[1],
                         "中文推广剧目": s_zh,
                         "剧目ID": keys_combo[2],
                         "素材名称": keys_combo[3],
-                        "花费 ($)": f"${m_res['花费']:,.2f}",
-                        "D0 达标率 (%)": format_pct(m_res["达标率"]),
                         "首日付费用户数": int(m_res["首日付费用户数"]),
                         "D0 ROAS (%)": format_pct(m_res["D0 ROAS"]),
                         "CPI ($)": f"${m_res['CPI']:.2f}",
@@ -874,10 +852,75 @@ if uploaded_file is not None:
                         "付费用户新注册用户占比 (%)": format_pct(m_res["付费用户新注册用户占比"])
                     })
 
-                df_mat_display = pd.DataFrame(mat_rows).sort_values(by="花费 ($)", ascending=False)
-                st.dataframe(df_mat_display, use_container_width=True, hide_index=True)
+            if raw_rows:
+                df_raw = pd.DataFrame(raw_rows)
+                
+                # 📌 2. 严格按纯数字 raw_cost 从大到小降序排列
+                df_sorted = df_raw.sort_values(by="raw_cost", ascending=False).copy()
+
+                # 带【剧目信息抬头】的一键复制文本生成
+                copy_text_lines = []
+                for (s_lang, s_name, s_id), drama_mat_sub in df_sorted.groupby(
+                    ["剧目/书籍语言", "剧目/书籍名称", "剧目ID"], sort=False
+                ):
+                    zh_title = drama_mat_sub["中文推广剧目"].iloc[0]
+                    header_line = f"{s_name} - {zh_title} - {s_id}"
+                    copy_text_lines.append(header_line)
+                    copy_text_lines.append("达标素材清单 (一行一个):")
+
+                    m_names = drama_mat_sub["素材名称"].unique().tolist()
+                    for m_n in m_names:
+                        copy_text_lines.append(m_n)
+                    copy_text_lines.append("")
+
+                mat_full_block = "\n".join(copy_text_lines)
+
+                st.markdown(
+                    f'<div class="material-copy-card"><div class="material-header-title">📋 复制达标素材名称列表 (带剧目信息抬头)</div>',
+                    unsafe_allow_html=True,
+                )
+                with st.expander("点击展开全量达标素材清单 (可点击右上角图标一键复制)"):
+                    st.text_area(
+                        "全量达标素材文本框:",
+                        value=mat_full_block,
+                        height=220,
+                        help="直接全选 Ctrl+A 复制，或点击框右上角复制文本",
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                st.subheader(f"📊 表格 1: 具体投放剧目素材拆分表 (D0达标率>=80%) {time_suffix}")
+
+                # 📌 3. 构建排好序且格式化好的最终展示 Dataframe
+                df_mat_display = pd.DataFrame({
+                    "剧目/书籍语言": df_sorted["剧目/书籍语言"],
+                    "剧目/书籍名称": df_sorted["剧目/书籍名称"],
+                    "中文推广剧目": df_sorted["中文推广剧目"],
+                    "剧目ID": df_sorted["剧目ID"],
+                    "素材名称": df_sorted["素材名称"],
+                    "花费 ($)": df_sorted["raw_cost"].apply(lambda x: f"${x:,.2f}"),
+                    "D0 达标率 (%)": df_sorted["raw_d0"].apply(format_pct),
+                    "首日付费用户数": df_sorted["首日付费用户数"],
+                    "D0 ROAS (%)": df_sorted["D0 ROAS (%)"],
+                    "CPI ($)": df_sorted["CPI ($)"],
+                    "首日付费率 (%)": df_sorted["首日付费率 (%)"],
+                    "首日激活用户数": df_sorted["首日激活用户数"],
+                    "新注册用户占比 (%)": df_sorted["新注册用户占比 (%)"],
+                    "付费用户新注册用户占比 (%)": df_sorted["付费用户新注册用户占比 (%)"]
+                })
+
+                st.dataframe(
+                    df_mat_display,
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
                 st.info("当前时间窗口内，暂无【D0 达标率 >= 80%】的达标素材。")
 
-        with mat_tab1: render_material_analysis(df_filtered[df_filtered["日期_str"] == latest_date].copy(), is_daily_mode=True)
-        with mat_tab2: render_material_analysis(df_filtered, is_daily_mode=False)
+        with mat_tab1:
+            df_mat_daily = df_filtered[
+                df_filtered["日期_str"] == latest_date
+            ].copy()
+            render_material_analysis(df_mat_daily, is_daily_mode=True)
+
+        with mat_tab2:
+            render_material_analysis(df_filtered, is_daily_mode=False)
