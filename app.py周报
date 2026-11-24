@@ -68,6 +68,18 @@ st.markdown("""
         padding-left: 8px;
     }
 
+    .lang-section-banner {
+        background-color: #e9ecef;
+        border-left: 5px solid #2b579a;
+        padding: 8px 14px;
+        margin-top: 22px;
+        margin-bottom: 14px;
+        border-radius: 4px;
+        font-size: 1.08rem;
+        font-weight: 800;
+        color: #1a365d !important;
+    }
+
     /* 顶部飞书导出按钮 */
     .btn-feishu-global {
         background-color: #2b579a !important;
@@ -376,7 +388,7 @@ if file_w1 and file_w2:
     with f7: col_manga_cls = st.selectbox("漫剧分类列:", all_cols, index=all_cols.index(find_best_match(all_cols, ['漫剧分类', '分类'])))
     with f8: col_optimizer = st.selectbox("优化师列:", all_cols, index=all_cols.index(find_best_match(all_cols, ['优化师', '负责人', '优化师姓名'])))
 
-    st.markdown("##### 🌐 板块一/二/每日趋势/Pixel & 优化方式/操作系统扩展映射")
+    st.markdown("##### 🌐 板块一至板块六扩展映射 (渠道/目标/操作系统/Pixel/优化方式&出价/日期/时区)")
     e1, e2, e3, e4 = st.columns(4)
     with e1: col_account = st.selectbox("账户名称/投放账户列:", all_cols, index=all_cols.index(find_best_match(all_cols, ['账户名称', '投放账户', '账户', 'account'])))
     with e2: col_platform = st.selectbox("投放平台列:", all_cols, index=all_cols.index(find_best_match(all_cols, ['投放平台', '平台', 'media_source'])))
@@ -392,7 +404,7 @@ if file_w1 and file_w2:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
-    # ⚡ 4. 向量化数据预计算缓存
+    # ⚡ 4. 向量化数据预计算缓存 (彻底提速)
     # -------------------------------------------------------------------------
     @st.cache_data(ttl=3600, show_spinner=False)
     def prepare_precomputed_data(raw_w1, raw_w2, col_map_tuple):
@@ -424,7 +436,7 @@ if file_w1 and file_w2:
             df_tmp['new_reg'] = df_tmp['act'] * reg_r
             df_tmp['new_pay'] = df_tmp['pay'] * pay_reg_r
 
-        # 首投日期计算
+        # 首投日期计算 (全局历史 Min Date)
         if c_title != "不映射/无此列" and c_title in w2.columns:
             w2[c_title] = w2[c_title].astype(str).str.strip()
             if c_title in w1.columns:
@@ -633,7 +645,7 @@ if file_w1 and file_w2:
             w2['cn_title'] = w2[col_cn_title].astype(str).str.strip() if col_cn_title in w2 else "-"
             w2['en_title'] = w2[col_en_title].astype(str).str.strip() if col_en_title in w2 else "-"
             
-            # 📌 专门清洗【书籍来源】列用于表格 1
+            # 绑定【书籍来源】列用于表格 1
             if col_book_source != "不映射/无此列" and col_book_source in w2.columns:
                 w2['book_source_clean'] = w2[col_book_source].fillna('未知来源').astype(str).str.strip()
             else:
@@ -650,7 +662,7 @@ if file_w1 and file_w2:
             show_level['is_new_passed'] = show_level['is_new_drama'] & show_level['is_passed']
 
             # =================================================================
-            # 🚨 修复完成：📊 1. 本周剧集类型情况及过测情况 - 语种类型汇总表 (按【书籍来源】聚合)
+            # 📊 1. 本周剧集类型情况及过测情况 - 语种类型汇总表 (绑定【书籍来源】列)
             # =================================================================
             st.markdown('<div class="report-subtitle">📊 1. 本周剧集类型情况及过测情况 - 语种类型汇总表</div>', unsafe_allow_html=True)
 
@@ -675,7 +687,6 @@ if file_w1 and file_w2:
                 for lang_val, group_lang in lang_grouped:
                     total_lang_cost = group_lang['spend'].sum()
                     
-                    # 📌 100% 绑定底表的【书籍来源】列 (book_source_clean) 进行聚合计算
                     type_rows = []
                     for source_val, g_type in group_lang.groupby('book_source_clean'):
                         t_sp = g_type['spend'].sum()
@@ -902,29 +913,225 @@ if file_w1 and file_w2:
 
             render_table3_pivot(show_level)
 
-            # 📊 5. 本周投放维度拆分
-            st.markdown('<div class="report-subtitle">📊 5. 本周投放维度拆分</div>', unsafe_allow_html=True)
+            # =================================================================
+            # 🚨 📊 5. 本周投放维度拆分 (按语种拆分为完全独立的表格分别渲染)
+            # =================================================================
+            st.markdown('<div class="report-subtitle">📊 5. 本周投放维度拆分（各语种独立透视表格）</div>', unsafe_allow_html=True)
 
-            p_w2 = df_w2.copy()
-            p_w1 = df_w1.copy()
-            p_w2['lang'] = p_w2[col_lang].astype(str).str.strip() if col_lang in p_w2 else "未知"
-            p_w1['lang'] = p_w1[col_lang].astype(str).str.strip() if col_lang in p_w1 else "未知"
-            p_w2['tz_class'] = p_w2[col_account].apply(get_account_timezone) if col_account in p_w2 and col_account != "不映射/无此列" else '美西账户'
+            p_w2_all = df_w2.copy()
+            p_w1_all = df_w1.copy()
+            p_w2_all['lang_clean'] = p_w2_all[col_lang].astype(str).str.strip() if col_lang in p_w2_all else "全部"
+            p_w1_all['lang_clean'] = p_w1_all[col_lang].astype(str).str.strip() if col_lang in p_w1_all else "全部"
+            p_w2_all['tz_class'] = p_w2_all[col_account].apply(get_account_timezone) if col_account in p_w2_all and col_account != "不映射/无此列" else '美西账户'
 
-            def process_lang_dim_block(dim_col, dim_name):
-                if dim_col == "不映射/无此列" or dim_col not in p_w2.columns: return
-                st.markdown(f"**📌 本周{dim_name}指标汇总与消耗占比透视：**")
-                g2 = p_w2.groupby(['lang', dim_col], as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
-                tot_spend2_all = g2['spend'].sum()
+            # 独立语种单维度透视生成器 (以当前单语种总花费为 100% 分母)
+            def render_single_lang_dim_block(df_curr, df_prev, lang_name, lang_tot_cost, dim_col, dim_label, show_mom=True):
+                if dim_col == "不映射/无此列" or dim_col not in df_curr.columns:
+                    st.warning(f"⚠️ 未映射 {dim_label} 列，请在上方“第二步”设置！")
+                    return
 
+                st.markdown(f"**📌 {lang_name} - {dim_label}指标汇总与消耗占比透视：**")
+                g2 = df_curr.groupby(dim_col, as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'}).sort_values('spend', ascending=False)
+                
                 html_up = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr>']
+                html_up.append(f'<th>{dim_label}</th><th>花费 ($)</th><th>消耗占比 (%)</th><th>D0 达标率 (%)</th><th>ROAS (%)</th><th>CPI ($)</th><th>CPP ($)</th><th>注册拉新占比 (%)</th><th>付费拉新占比 (%)</th></tr></thead><tbody>')
+
+                g_sp, g_rev, g_tar, g_act, g_pay, g_n_reg, g_n_pay = g2['spend'].sum(), g2['d0_rev'].sum(), g2['d0_target'].sum(), g2['act'].sum(), g2['pay'].sum(), g2['new_reg'].sum(), g2['new_pay'].sum()
+
+                for _, r in g2.iterrows():
+                    sp = r['spend']
+                    p_pct = (sp / lang_tot_cost * 100) if lang_tot_cost > 0 else 0
+                    d0_r = (r['d0_rev'] / r['d0_target'] * 100) if r['d0_target'] > 0 else 0
+                    passed_class = ' class="cell-passed"' if d0_r >= 85.0 else (' class="cell-passed-text-only"' if d0_r >= 80.0 else '')
+                    html_up.append(f'<tr><td style="font-weight:bold;">{r[dim_col]}</td><td>${sp:,.2f}</td><td>{p_pct:.2f}%</td><td{passed_class}>{d0_r:.2f}%</td><td>{(r["d0_rev"]/sp*100) if sp>0 else 0:.2f}%</td><td>${(sp/r["act"]) if r["act"]>0 else 0:.2f}</td><td>${(sp/r["pay"]) if r["pay"]>0 else 0:.2f}</td><td>{(r["new_reg"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td><td>{(r["new_pay"]/r["pay"]*100) if r["pay"]>0 else 0:.2f}%</td></tr>')
+
+                g_d0 = (g_rev / g_tar * 100) if g_tar > 0 else 0
+                g_passed_class = ' class="cell-passed-underline"' if g_d0 >= 85.0 else (' class="cell-passed-text-only"' if g_d0 >= 80.0 else '')
+                html_up.append(f'<tr class="row-grand-total"><td>{lang_name} 总计</td><td>${g_sp:,.2f}</td><td>100.00%</td><td{g_passed_class}>{g_d0:.2f}%</td><td>{(g_rev/g_sp*100) if g_sp>0 else 0:.2f}%</td><td>${(g_sp/g_act) if g_act>0 else 0:.2f}</td><td>${(g_sp/g_pay) if g_pay>0 else 0:.2f}</td><td>{(g_n_reg/g_act*100) if g_act>0 else 0:.2f}%</td><td>{(g_n_pay/g_pay*100) if g_pay>0 else 0:.2f}%</td></tr></tbody></table></div>')
+                st.markdown("".join(html_up), unsafe_allow_html=True)
+
+                # 双周环比明细表
+                if show_mom and dim_col in df_prev.columns:
+                    st.markdown(f"**📌 {lang_name} - {dim_label}双周环比变动明细：**")
+                    g1 = df_prev.groupby(dim_col, as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
+                    html_down = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr>']
+                    html_down.append(f'<th>{dim_label}</th><th>本周消耗 ($)</th><th>上周消耗 ($)</th><th>消耗环比 (%)</th><th>本周 D0 达标率 (%)</th><th>达标率环比 (%)</th><th>本周 D0 ROAS (%)</th><th>ROAS 环比 (%)</th><th>CPI ($)</th><th>CPP ($)</th><th>注册拉新占比 (%)</th><th>付费拉新占比 (%)</th></tr></thead><tbody>')
+
+                    for _, r2 in g2.iterrows():
+                        d_key = r2[dim_col]
+                        match_1 = g1[g1[dim_col] == d_key]
+                        s2, s1 = r2['spend'], match_1['spend'].sum() if not match_1.empty else 0.0
+                        d0_2 = (r2['d0_rev'] / r2['d0_target'] * 100) if r2['d0_target'] > 0 else 0.0
+                        d0_1 = (match_1['d0_rev'].sum() / match_1['d0_target'].sum() * 100) if not match_1.empty and match_1['d0_target'].sum() > 0 else 0.0
+                        roas2 = (r2['d0_rev'] / s2 * 100) if s2 > 0 else 0.0
+                        roas1 = (match_1['d0_rev'].sum() / s1 * 100) if not match_1.empty and s1 > 0 else 0.0
+                        s_diff_str, s_style = format_diff_with_arrow(((s2 - s1) / s1 * 100) if s1 > 0 else 0.0)
+                        d0_diff_str, d0_style = format_diff_with_arrow(d0_2 - d0_1, is_pp=True)
+                        roas_diff_str, roas_style = format_diff_with_arrow(roas2 - roas1, is_pp=True)
+                        passed_class = ' class="cell-passed"' if d0_2 >= 85.0 else (' class="cell-passed-text-only"' if d0_2 >= 80.0 else '')
+
+                        html_down.append(f'<tr><td style="font-weight:bold;">{d_key}</td><td>${s2:,.2f}</td><td class="cell-last-week">${s1:,.2f}</td><td style="{s_style}">{s_diff_str}</td><td{passed_class}>{d0_2:.2f}%</td><td style="{d0_style}">{d0_diff_str}</td><td>{roas2:.2f}%</td><td style="{roas_style}">{roas_diff_str}</td><td>${(s2/r2["act"]) if r2["act"]>0 else 0:.2f}</td><td>${(s2/r2["pay"]) if r2["pay"]>0 else 0:.2f}</td><td>{(r2["new_reg"]/r2["act"]*100) if r2["act"]>0 else 0:.2f}%</td><td>{(r2["new_pay"]/r2["pay"]*100) if r2["pay"]>0 else 0:.2f}%</td></tr>')
+                    html_down.append('</tbody></table></div>')
+                    st.markdown("".join(html_down), unsafe_allow_html=True)
+
+            # 独立语种【板块四】投放平台 & Pixel 名称数据透视
+            def render_single_lang_pixel_block(df_curr, lang_name):
+                if col_pixel == "不映射/无此列" or col_pixel not in df_curr.columns or col_platform not in df_curr.columns:
+                    st.warning("⚠️ 未映射 Pixel 名称列或投放平台列，请在上方“第二步”设置！")
+                    return
+
+                st.markdown(f"**【板块四】{lang_name} - 本周投放平台 & Pixel 名称数据透视（按消耗降序）**")
+                g_px = df_curr.groupby([col_platform, col_pixel], as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
+                html_px = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr><th>投放平台</th><th>pixel名称</th><th>求和项:花费 ($)</th><th>达标率 (%)</th><th>D0 ROAS (%)</th><th>CPI ($)</th><th>付费率 (%)</th><th>CPP ($)</th><th>新注册用户率 (%)</th><th>求和项:新注册用户付费率 (%)</th></tr></thead><tbody>']
+
+                g_sp, g_rev, g_tar, g_act, g_pay, g_n_reg, g_n_pay = g_px['spend'].sum(), g_px['d0_rev'].sum(), g_px['d0_target'].sum(), g_px['act'].sum(), g_px['pay'].sum(), g_px['new_reg'].sum(), g_px['new_pay'].sum()
+                p_grouped = sorted(g_px.groupby(col_platform), key=lambda x: x[1]['spend'].sum(), reverse=True)
+
+                for p_key, group_p in p_grouped:
+                    group_sorted = group_p.sort_values('spend', ascending=False)
+                    p_rows_count = len(group_sorted); first_p_row = True
+                    for _, r in group_sorted.iterrows():
+                        sp = r['spend']; d0_r = (r['d0_rev'] / r['d0_target'] * 100) if r['d0_target'] > 0 else 0
+                        passed_cell_class = ' class="cell-passed"' if d0_r >= 85.0 else (' class="cell-passed-text-only"' if d0_r >= 80.0 else '')
+                        html_px.append('<tr>')
+                        if first_p_row: html_px.append(f'<td rowspan="{p_rows_count}" style="font-weight:bold; background-color:#ffffff;">{p_key}</td>'); first_p_row = False
+                        html_px.append(f'<td>{r[col_pixel]}</td><td>${sp:,.2f}</td><td{passed_cell_class}>{d0_r:.2f}%</td><td>{(r["d0_rev"]/sp*100) if sp>0 else 0:.2f}%</td><td>${(sp/r["act"]) if r["act"]>0 else 0:.2f}</td><td>{(r["pay"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td><td>${(sp/r["pay"]) if r["pay"]>0 else 0:.2f}</td><td>{(r["new_reg"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td><td>{(r["new_pay"]/r["pay"]*100) if r["pay"]>0 else 0:.2f}%</td></tr>')
+
+                g_d0 = (g_rev / g_tar * 100) if g_tar > 0 else 0
+                g_passed_class = ' class="cell-passed-underline"' if g_d0 >= 85.0 else (' class="cell-passed-text-only"' if g_d0 >= 80.0 else '')
+                html_px.append(f'<tr class="row-grand-total"><td colspan="2">{lang_name} 总计</td><td>${g_sp:,.2f}</td><td{g_passed_class}>{g_d0:.2f}%</td><td>{(g_rev/g_sp*100) if g_sp>0 else 0:.2f}%</td><td>${(g_sp/g_act) if g_act>0 else 0:.2f}</td><td>{(g_pay/g_act*100) if g_act>0 else 0:.2f}%</td><td>${(g_sp/g_pay) if g_pay>0 else 0:.2f}</td><td>{(g_n_reg/g_act*100) if g_act>0 else 0:.2f}%</td><td>{(g_n_pay/g_pay*100) if g_pay>0 else 0:.2f}%</td></tr></tbody></table></div>')
+                st.markdown("".join(html_px), unsafe_allow_html=True)
+
+            # 独立语种【板块五】优化方式 & 出价透视表
+            def render_single_lang_bidding_block(df_curr, lang_name):
+                if col_opt_type == "不映射/无此列" or col_opt_type not in df_curr.columns or col_platform not in df_curr.columns or col_target not in df_curr.columns:
+                    st.warning("⚠️ 未映射 优化方式 / 投放平台 / 推广目标 列，请在上方“第二步”设置！")
+                    return
+
+                st.markdown(f"**【板块五】{lang_name} - 本周优化方式 & 出价透视表 (AEO / VO / 手动出价)**")
+                df_opt = df_curr.copy()
+                df_opt['bid_val'] = df_opt[col_bid_val].fillna('-').astype(str).str.strip() if col_bid_val in df_opt and col_bid_val != "不映射/无此列" else "-"
+                g_opt = df_opt.groupby([col_platform, col_target, col_opt_type, 'bid_val'], as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum'})
+                html_opt = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr><th>投放平台</th><th>推广目标</th><th>优化方式</th><th>手动出价的金额/系数</th><th>花费 ($)</th><th>D0 达标率 (%)</th><th>CPI ($)</th><th>CPP ($)</th><th>付费率 (%)</th><th>ARPPU ($)</th><th>ROAS (%)</th></tr></thead><tbody>']
+
+                tot_sp, tot_rev, tot_tar, tot_act, tot_pay = 0, 0, 0, 0, 0
+                p_grouped = sorted(g_opt.groupby(col_platform), key=lambda x: x[1]['spend'].sum(), reverse=True)
+                for p_key, group_p in p_grouped:
+                    p_rows_count = len(group_p); first_p_row = True
+                    t_grouped = sorted(group_p.groupby(col_target), key=lambda x: x[1]['spend'].sum(), reverse=True)
+                    for t_key, group_t in t_grouped:
+                        t_rows_count = len(group_t); first_t_row = True
+                        o_grouped = sorted(group_t.groupby(col_opt_type), key=lambda x: x[1]['spend'].sum(), reverse=True)
+                        for o_key, group_o in o_grouped:
+                            group_sorted = group_o.sort_values('spend', ascending=False)
+                            o_rows_count = len(group_sorted); first_o_row = True
+                            for _, r in group_sorted.iterrows():
+                                sp, rev, tar, act_n, pay_n = r['spend'], r['d0_rev'], r['d0_target'], r['act'], r['pay']
+                                tot_sp += sp; tot_rev += rev; tot_tar += tar; tot_act += act_n; tot_pay += pay_n
+                                d0_r = (rev / tar * 100) if tar > 0 else 0
+                                passed_cell_class = ' class="cell-passed"' if d0_r >= 85.0 else (' class="cell-passed-text-only"' if d0_r >= 80.0 else '')
+                                html_opt.append('<tr>')
+                                if first_p_row: html_opt.append(f'<td rowspan="{p_rows_count}" style="font-weight:bold; background-color:#ffffff;">{p_key}</td>'); first_p_row = False
+                                if first_t_row: html_opt.append(f'<td rowspan="{t_rows_count}" style="background-color:#ffffff;">{t_key}</td>'); first_t_row = False
+                                if first_o_row: html_opt.append(f'<td rowspan="{o_rows_count}" style="font-weight:bold; background-color:#ffffff;">{o_key}</td>'); first_o_row = False
+                                html_opt.append(f'<td>{r["bid_val"]}</td><td>${sp:,.2f}</td><td{passed_cell_class}>{d0_r:.2f}%</td><td>${(sp/act_n) if act_n>0 else 0:.2f}</td><td>${(sp/pay_n) if pay_n>0 else 0:.2f}</td><td>{(pay_n/act_n*100) if act_n>0 else 0:.2f}%</td><td>${(rev/pay_n) if pay_n>0 else 0:.2f}</td><td>{(rev/sp*100) if sp>0 else 0:.2f}%</td></tr>')
+
+                tot_d0 = (tot_rev / tot_tar * 100) if tot_tar > 0 else 0
+                tot_passed_class = ' class="cell-passed-underline"' if tot_d0 >= 85.0 else (' class="cell-passed-text-only"' if tot_d0 >= 80.0 else '')
+                html_opt.append(f'<tr class="row-grand-total"><td colspan="4">{lang_name} 总计</td><td>${tot_sp:,.2f}</td><td{tot_passed_class}>{tot_d0:.2f}%</td><td>${(tot_sp/tot_act) if tot_act>0 else 0:.2f}</td><td>${(tot_sp/tot_pay) if tot_pay>0 else 0:.2f}</td><td>{(tot_pay/tot_act*100) if tot_act>0 else 0:.2f}%</td><td>${(tot_rev/tot_pay) if tot_pay>0 else 0:.2f}</td><td>{(tot_rev/tot_sp*100) if tot_sp>0 else 0:.2f}%</td></tr></tbody></table></div>')
+                st.markdown("".join(html_opt), unsafe_allow_html=True)
+
+            # 按语种循环分别生成独立表格 (韩语优先, 其次繁体中文, 再及其他语种)
+            available_langs = list(p_w2_all['lang_clean'].unique())
+            ordered_langs = []
+            for pref in ['韩语', '繁体中文']:
+                for al in available_langs:
+                    if pref in al and al not in ordered_langs:
+                        ordered_langs.append(al)
+            for al in available_langs:
+                if al not in ordered_langs:
+                    ordered_langs.append(al)
+
+            for lang in ordered_langs:
+                df_lang_curr = p_w2_all[p_w2_all['lang_clean'] == lang].copy()
+                df_lang_prev = p_w1_all[p_w1_all['lang_clean'] == lang].copy()
+                if df_lang_curr.empty:
+                    continue
+
+                lang_flag = "🇰🇷" if "韩" in lang else ("🇭🇰/🇹🇼" if "繁" in lang else "🌐")
+                st.markdown(f'<div class="lang-section-banner">{lang_flag} 【{lang}】投放维度拆分独立明细（消耗占比按本语种独立计算 = 100%）</div>', unsafe_allow_html=True)
+
+                lang_total_cost = df_lang_curr['spend'].sum()
+
+                # 【板块一】渠道维度双周环比对比 (FB / TT)
+                st.markdown(f"**【板块一】{lang} - 渠道维度双周环比对比 (FB / TT)**")
+                render_single_lang_dim_block(df_lang_curr, df_lang_prev, lang, lang_total_cost, col_platform, "投放平台", show_mom=True)
+
+                # 【板块二】推广目标维度双周环比对比 (W2A / App直投)
+                st.markdown(f"**【板块二】{lang} - 推广目标维度双周环比对比 (W2A / App直投)**")
+                render_single_lang_dim_block(df_lang_curr, df_lang_prev, lang, lang_total_cost, col_target, "推广目标", show_mom=True)
+
+                # 【板块三】操作系统端成效汇总与消耗占比透视 (iOS / 安卓 / Mix)
+                st.markdown(f"**【板块三】{lang} - 操作系统端成效汇总与消耗占比透视 (iOS / 安卓 / Mix)**")
+                render_single_lang_dim_block(df_lang_curr, df_lang_prev, lang, lang_total_cost, col_os, "操作系统 (广告)", show_mom=False)
+
+                # 【板块四】本周投放平台 & Pixel 名称数据透视
+                render_single_lang_pixel_block(df_lang_curr, lang)
+
+                # 【板块五】本周优化方式 & 出价透视表
+                render_single_lang_bidding_block(df_lang_curr, lang)
+
+                st.divider()
+
+            # 【板块六】本周每日数据趋势透视 & 账户时区数据透视 (保留全量拓展视图)
+            st.markdown("**【补充板块 A】本周每日数据趋势透视**")
+            if col_date != "不映射/无此列" and col_date in p_w2_all.columns:
+                df_d = p_w2_all.copy()
+                try: df_d['date_clean'] = pd.to_datetime(df_d[col_date]).dt.strftime('%Y-%m-%d')
+                except: df_d['date_clean'] = df_d[col_date].astype(str).str.strip()
+                g_daily = df_d.groupby(['lang_clean', 'date_clean'], as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
+                html_dt = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr>']
                 show_lang_col = (target_lang_filter is None)
-                if show_lang_col: html_up.append('<th>剧目/书籍语言</th>')
-                html_up.append(f'<th>{dim_name}</th><th>花费 ($)</th><th>消耗占比 (%)</th><th>D0 达标率 (%)</th><th>ROAS (%)</th><th>CPI ($)</th><th>CPP ($)</th><th>注册拉新占比 (%)</th><th>付费拉新占比 (%)</th></tr></thead><tbody>')
+                if show_lang_col: html_dt.append('<th>剧目/书籍语言</th>')
+                html_dt.append('<th>时间/日期</th><th>花费 ($)</th><th>D0 达标率 (%)</th><th>D0 ROAS (%)</th><th>付费用户新注册用户占比 (%)</th><th>新注册用户占比 (%)</th></tr></thead><tbody>')
 
                 grand_sp, grand_rev, grand_tar, grand_act, grand_pay, grand_n_reg, grand_n_pay = 0, 0, 0, 0, 0, 0, 0
-                lang_grouped = sorted(g2.groupby('lang'), key=lambda x: x[1]['spend'].sum(), reverse=True)
+                lang_grouped = sorted(g_daily.groupby('lang_clean'), key=lambda x: x[1]['spend'].sum(), reverse=True)
+                for lang_val, group_lang in lang_grouped:
+                    group_sorted = group_lang.sort_values('date_clean', ascending=False)
+                    rowspan_count = len(group_sorted); first_row = True
+                    l_sp, l_rev, l_tar, l_act, l_pay, l_n_reg, l_n_pay = group_sorted['spend'].sum(), group_sorted['d0_rev'].sum(), group_sorted['d0_target'].sum(), group_sorted['act'].sum(), group_sorted['pay'].sum(), group_sorted['new_reg'].sum(), group_sorted['new_pay'].sum()
+                    grand_sp += l_sp; grand_rev += l_rev; grand_tar += l_tar; grand_act += l_act; grand_pay += l_pay; grand_n_reg += l_n_reg; grand_n_pay += l_n_pay
 
+                    for _, r in group_sorted.iterrows():
+                        sp = r['spend']; d0_r = (r['d0_rev'] / r['d0_target'] * 100) if r['d0_target'] > 0 else 0
+                        passed_class = ' class="cell-passed"' if d0_r >= 85.0 else (' class="cell-passed-text-only"' if d0_r >= 80.0 else '')
+                        html_dt.append('<tr>')
+                        if show_lang_col and first_row: html_dt.append(f'<td rowspan="{rowspan_count}" style="font-weight:bold; background-color:#ffffff;">{lang_val}</td>'); first_row = False
+                        html_dt.append(f'<td>{r["date_clean"]}</td><td>${sp:,.2f}</td><td{passed_class}>{d0_r:.2f}%</td><td>{(r["d0_rev"]/sp*100) if sp>0 else 0:.2f}%</td><td>{(r["new_pay"]/r["pay"]*100) if r["pay"]>0 else 0:.2f}%</td><td>{(r["new_reg"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td></tr>')
+
+                    l_d0_r = (l_rev / l_tar * 100) if l_tar > 0 else 0
+                    l_passed_class = ' class="cell-passed-underline"' if l_d0_r >= 85.0 else (' class="cell-passed-text-only"' if l_d0_r >= 80.0 else '')
+                    span_val_lang = 2 if show_lang_col else 1
+                    html_dt.append(f'<tr class="row-lang-subtotal"><td colspan="{span_val_lang}">{lang_val} 小计</td><td>${l_sp:,.2f}</td><td{l_passed_class}>{l_d0_r:.2f}%</td><td>{(l_rev/l_sp*100) if l_sp>0 else 0:.2f}%</td><td>{(l_n_pay/l_pay*100) if l_pay>0 else 0:.2f}%</td><td>{(l_n_reg/l_act*100) if l_act>0 else 0:.2f}%</td></tr>')
+
+                g_d0 = (grand_rev / grand_tar * 100) if grand_tar > 0 else 0
+                g_passed_class = ' class="cell-passed-underline"' if g_d0 >= 85.0 else (' class="cell-passed-text-only"' if g_d0 >= 80.0 else '')
+                span_val_tot = 2 if show_lang_col else 1
+                html_dt.append(f'<tr class="row-grand-total"><td colspan="{span_val_tot}">总计</td><td>${grand_sp:,.2f}</td><td{g_passed_class}>{g_d0:.2f}%</td><td>{(grand_rev/grand_sp*100) if grand_sp>0 else 0:.2f}%</td><td>{(grand_n_pay/grand_pay*100) if grand_pay>0 else 0:.2f}%</td><td>{(grand_n_reg/grand_act*100) if grand_act>0 else 0:.2f}%</td></tr></tbody></table></div>')
+                st.markdown("".join(html_dt), unsafe_allow_html=True)
+
+            st.markdown("**【补充板块 B】不同语种的账户时区数据透视表**")
+            if col_account != "不映射/无此列" and col_account in p_w2_all.columns:
+                g_tz = p_w2_all.groupby(['lang_clean', 'tz_class'], as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
+                tot_spend_tz = g_tz['spend'].sum()
+                html_tz = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr>']
+                show_lang_col = (target_lang_filter is None)
+                if show_lang_col: html_tz.append('<th>剧目/书籍语言</th>')
+                html_tz.append('<th>账户时区分类</th><th>花费 ($)</th><th>消耗占比 (%)</th><th>D0 达标率 (%)</th><th>ROAS (%)</th><th>CPI ($)</th><th>CPP ($)</th><th>注册拉新占比 (%)</th><th>付费拉新占比 (%)</th></tr></thead><tbody>')
+
+                grand_sp, grand_rev, grand_tar, grand_act, grand_pay, grand_n_reg, grand_n_pay = 0, 0, 0, 0, 0, 0, 0
+                lang_grouped = sorted(g_tz.groupby('lang_clean'), key=lambda x: x[1]['spend'].sum(), reverse=True)
                 for lang_val, group_lang in lang_grouped:
                     group_sorted = group_lang.sort_values('spend', ascending=False)
                     rowspan_count = len(group_sorted); first_row = True
@@ -932,36 +1139,22 @@ if file_w1 and file_w2:
                     grand_sp += l_sp; grand_rev += l_rev; grand_tar += l_tar; grand_act += l_act; grand_pay += l_pay; grand_n_reg += l_n_reg; grand_n_pay += l_n_pay
 
                     for _, r in group_sorted.iterrows():
-                        sp = r['spend']
-                        d0_r = (r['d0_rev'] / r['d0_target'] * 100) if r['d0_target'] > 0 else 0
+                        sp = r['spend']; d0_r = (r['d0_rev'] / r['d0_target'] * 100) if r['d0_target'] > 0 else 0
                         passed_class = ' class="cell-passed"' if d0_r >= 85.0 else (' class="cell-passed-text-only"' if d0_r >= 80.0 else '')
-                        html_up.append('<tr>')
-                        if show_lang_col and first_row: html_up.append(f'<td rowspan="{rowspan_count}" style="font-weight:bold; background-color:#ffffff;">{lang_val}</td>'); first_row = False
-                        html_up.append(f'<td>{r[dim_col]}</td><td>${sp:,.2f}</td><td>{(sp/tot_spend2_all*100) if tot_spend2_all>0 else 0:.2f}%</td><td{passed_class}>{d0_r:.2f}%</td><td>{(r["d0_rev"]/sp*100) if sp>0 else 0:.2f}%</td><td>${(sp/r["act"]) if r["act"]>0 else 0:.2f}</td><td>${(sp/r["pay"]) if r["pay"]>0 else 0:.2f}</td><td>{(r["new_reg"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td><td>{(r["new_pay"]/r["pay"]*100) if r["pay"]>0 else 0:.2f}%</td></tr>')
+                        html_tz.append('<tr>')
+                        if show_lang_col and first_row: html_tz.append(f'<td rowspan="{rowspan_count}" style="font-weight:bold; background-color:#ffffff;">{lang_val}</td>'); first_row = False
+                        html_tz.append(f'<td>{r["tz_class"]}</td><td>${sp:,.2f}</td><td>{(sp/tot_spend_tz*100) if tot_spend_tz>0 else 0:.2f}%</td><td{passed_class}>{d0_r:.2f}%</td><td>{(r["d0_rev"]/sp*100) if sp>0 else 0:.2f}%</td><td>${(sp/r["act"]) if r["act"]>0 else 0:.2f}</td><td>${(sp/r["pay"]) if r["pay"]>0 else 0:.2f}</td><td>{(r["new_reg"]/r["act"]*100) if r["act"]>0 else 0:.2f}%</td><td>{(r["new_pay"]/r["pay"]*100) if r["pay"]>0 else 0:.2f}%</td></tr>')
 
                     l_d0_r = (l_rev / l_tar * 100) if l_tar > 0 else 0
                     l_passed_class = ' class="cell-passed-underline"' if l_d0_r >= 85.0 else (' class="cell-passed-text-only"' if l_d0_r >= 80.0 else '')
-                    span_val_up = 2 if show_lang_col else 1
-                    html_up.append(f'<tr class="row-lang-subtotal"><td colspan="{span_val_up}">{lang_val} 小计</td><td>${l_sp:,.2f}</td><td>{(l_sp/tot_spend2_all*100) if tot_spend2_all>0 else 0:.2f}%</td><td{l_passed_class}>{l_d0_r:.2f}%</td><td>{(l_rev/l_sp*100) if l_sp>0 else 0:.2f}%</td><td>${(l_sp/l_act) if l_act>0 else 0:.2f}</td><td>${(l_sp/l_pay) if l_pay>0 else 0:.2f}</td><td>{(l_n_reg/l_act*100) if l_act>0 else 0:.2f}%</td><td>{(l_n_pay/l_pay*100) if l_pay>0 else 0:.2f}%</td></tr>')
+                    span_val_lang = 2 if show_lang_col else 1
+                    html_tz.append(f'<tr class="row-lang-subtotal"><td colspan="{span_val_lang}">{lang_val} 小计</td><td>${l_sp:,.2f}</td><td>{(l_sp/tot_spend_tz*100) if tot_spend_tz>0 else 0:.2f}%</td><td{l_passed_class}>{l_d0_r:.2f}%</td><td>{(l_rev/l_sp*100) if l_sp>0 else 0:.2f}%</td><td>${(l_sp/l_act) if l_act>0 else 0:.2f}</td><td>${(l_sp/l_pay) if l_pay>0 else 0:.2f}</td><td>{(l_n_reg/l_act*100) if l_act>0 else 0:.2f}%</td><td>{(l_n_pay/l_pay*100) if l_pay>0 else 0:.2f}%</td></tr>')
 
                 g_d0 = (grand_rev / grand_tar * 100) if grand_tar > 0 else 0
                 g_passed_class = ' class="cell-passed-underline"' if g_d0 >= 85.0 else (' class="cell-passed-text-only"' if g_d0 >= 80.0 else '')
                 span_val_tot = 2 if show_lang_col else 1
-                html_up.append(f'<tr class="row-grand-total"><td colspan="{span_val_tot}">总计</td><td>${grand_sp:,.2f}</td><td>100.00%</td><td{g_passed_class}>{g_d0:.2f}%</td><td>{(grand_rev/grand_sp*100) if grand_sp>0 else 0:.2f}%</td><td>${(grand_sp/grand_act) if grand_act>0 else 0:.2f}</td><td>${(grand_sp/grand_pay) if grand_pay>0 else 0:.2f}</td><td>{(grand_n_reg/grand_act*100) if grand_act>0 else 0:.2f}%</td><td>{(grand_n_pay/grand_pay*100) if grand_pay>0 else 0:.2f}%</td></tr></tbody></table></div>')
-                st.markdown("".join(html_up), unsafe_allow_html=True)
-
-            st.markdown("**【板块一】渠道维度双周环比对比 (FB / TT)**")
-            process_lang_dim_block(col_platform, "投放平台")
-
-            st.markdown("**【板块二】推广目标维度 & 操作系统端成效透视**")
-            process_lang_dim_block(col_target, "推广目标")
-            process_lang_dim_block(col_os, "操作系统 (广告)")
-
-            st.markdown("**【板块三】Pixel 名称维度数据透视**")
-            process_lang_dim_block(col_pixel, "Pixel 名称")
-
-            st.markdown("**【板块四】账户时区维度数据透视**")
-            process_lang_dim_block('tz_class', "账户时区分类")
+                html_tz.append(f'<tr class="row-grand-total"><td colspan="{span_val_tot}">总计</td><td>${grand_sp:,.2f}</td><td>100.00%</td><td{g_passed_class}>{g_d0:.2f}%</td><td>{(grand_rev/grand_sp*100) if grand_sp>0 else 0:.2f}%</td><td>${(grand_sp/grand_act) if grand_act>0 else 0:.2f}</td><td>${(grand_sp/grand_pay) if grand_pay>0 else 0:.2f}</td><td>{(grand_n_reg/grand_act*100) if grand_act>0 else 0:.2f}%</td><td>{(grand_n_pay/grand_pay*100) if grand_pay>0 else 0:.2f}%</td></tr></tbody></table></div>')
+                st.markdown("".join(html_tz), unsafe_allow_html=True)
 
             # =================================================================
             # 三、团队管理
@@ -969,7 +1162,10 @@ if file_w1 and file_w2:
             st.markdown('<div class="report-title">三、团队管理</div>', unsafe_allow_html=True)
             OPTIMIZER_WEEKLY_KPI = {'CZM': 63000.0, 'lel': 45360.0, 'LTT': 50400.0, 'Mia': 42000.0, 'Fanny': 42000.0, 'Nora': 30450.0}
 
-            if col_optimizer != "不映射/无此列" and col_optimizer in df_w2.columns:
+            if col_optimizer == "不映射/无此列" or col_optimizer not in df_w2.columns:
+                st.warning("⚠️ 未映射 优化师 列，请在上方“第二步”设置！")
+            else:
+                st.markdown('<div class="report-subtitle">📊 1. 本周组内优化师数据汇总透视表（含 KPI 完成率）</div>', unsafe_allow_html=True)
                 w2_opt = df_w2.copy()
                 w2_opt['optimizer'] = w2_opt[col_optimizer].astype(str).str.strip()
                 g2_opt = w2_opt.groupby('optimizer', as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'}).sort_values('spend', ascending=False)
@@ -992,7 +1188,46 @@ if file_w1 and file_w2:
                 html_3a.append(f'<tr class="row-highlight-yellow"><td>总计</td><td>${tot_sp:,.2f}</td><td{tot_passed_cls}>{tot_d0:.2f}%</td><td>—</td><td>—</td><td>{(tot_rev/tot_sp*100) if tot_sp>0 else 0:.2f}%</td><td>{(tot_n_pay/tot_pay*100) if tot_pay>0 else 0:.2f}%</td><td>{(tot_n_reg/tot_act*100) if tot_act>0 else 0:.2f}%</td></tr></tbody></table></div>')
                 st.markdown("".join(html_3a), unsafe_allow_html=True)
 
+                # 📊 2. 优化师维度双周环比透视分析
+                if col_optimizer in df_w1.columns:
+                    st.markdown('<div class="report-subtitle">📊 2. 优化师维度双周环比透视分析</div>', unsafe_allow_html=True)
+                    w1_opt = df_w1.copy()
+                    w1_opt['optimizer'] = w1_opt[col_optimizer].astype(str).str.strip()
+                    g1_opt = w1_opt.groupby('optimizer', as_index=False).agg({'spend': 'sum', 'd0_rev': 'sum', 'd0_target': 'sum', 'act': 'sum', 'pay': 'sum', 'new_reg': 'sum', 'new_pay': 'sum'})
+                    opt_grouped = sorted(g2_opt.groupby('optimizer'), key=lambda x: x[1]['spend'].sum(), reverse=True)
+
+                    html_single = ['<div class="pivot-table-container"><table class="full-expand-table"><thead><tr><th>优化师</th><th>周期</th><th>消耗 ($)</th><th>消耗环比</th><th>D0 达标率 (%)</th><th>达标率环比</th><th>ROAS (%)</th><th>ROAS 环比</th><th>付费用户新注册用户占比 (%)</th><th>付费新注册占比环比</th></tr></thead><tbody>']
+                    for opt_key, group2 in opt_grouped:
+                        group1 = g1_opt[g1_opt['optimizer'] == opt_key]
+                        s2, rev2, tar2, pay2_num, n_pay2 = group2['spend'].sum(), group2['d0_rev'].sum(), group2['d0_target'].sum(), group2['pay'].sum(), group2['new_pay'].sum()
+                        d0_2 = (rev2 / tar2 * 100) if tar2 > 0 else 0.0
+                        roas2 = (rev2 / s2 * 100) if s2 > 0 else 0.0
+                        pay_pct2 = (n_pay2 / pay2_num * 100) if pay2_num > 0 else 0.0
+
+                        s1 = group1['spend'].sum() if not group1.empty else 0.0
+                        rev1 = group1['d0_rev'].sum() if not group1.empty else 0.0
+                        tar1 = group1['d0_target'].sum() if not group1.empty else 0.0
+                        pay1_num = group1['pay'].sum() if not group1.empty else 0.0
+                        n_pay1 = group1['new_pay'].sum() if not group1.empty else 0.0
+                        d0_1 = (rev1 / tar1 * 100) if tar1 > 0 and not group1.empty else 0.0
+                        roas1 = (rev1 / s1 * 100) if s1 > 0 and not group1.empty else 0.0
+                        pay_pct1 = (n_pay1 / pay1_num * 100) if pay1_num > 0 and not group1.empty else 0.0
+
+                        s_diff_str, s_style = format_diff_with_arrow(((s2 - s1) / s1 * 100) if s1 > 0 else 0.0)
+                        d0_diff_str, d0_style = format_diff_with_arrow(d0_2 - d0_1, is_pp=True)
+                        roas_diff_str, roas_style = format_diff_with_arrow(roas2 - roas1, is_pp=True)
+                        pay_diff_str, pay_style = format_diff_with_arrow(pay_pct2 - pay_pct1, is_pp=True)
+                        d0_2_class = ' class="cell-passed"' if d0_2 >= 85.0 else (' class="cell-passed-text-only"' if d0_2 >= 80.0 else '')
+                        d0_1_class = ' class="cell-passed"' if d0_1 >= 85.0 else (' class="cell-passed-text-only"' if d0_1 >= 80.0 else '')
+
+                        html_single.append(f'<tr><td rowspan="2" style="font-weight:bold; background-color:#ffffff;">{opt_key}</td><td>本周</td><td>${s2:,.2f}</td><td style="{s_style}">{s_diff_str}</td><td{d0_2_class}>{d0_2:.2f}%</td><td style="{d0_style}">{d0_diff_str}</td><td>{roas2:.2f}%</td><td style="{roas_style}">{roas_diff_str}</td><td>{pay_pct2:.2f}%</td><td style="{pay_diff_str}">{pay_diff_str}</td></tr>')
+                        html_single.append(f'<tr><td>上周</td><td class="cell-last-week">${s1:,.2f}</td><td>—</td><td{d0_1_class}>{d0_1:.2f}%</td><td>—</td><td>{roas1:.2f}%</td><td>—</td><td>{pay_pct1:.2f}%</td><td>—</td></tr>')
+
+                    html_single.append('</tbody></table></div>')
+                    st.markdown("".join(html_single), unsafe_allow_html=True)
+
             # 智能文字复盘卡片
+            st.markdown('<div class="report-subtitle">📝 文字复盘要点总结</div>', unsafe_allow_html=True)
             zi_group = show_level[show_level[col_copyright].str.contains('自制|自办', na=False)]
             cai_group = show_level[show_level[col_copyright].str.contains('采购|外包', na=False)]
             zi_pass = (zi_group['is_new_passed'].sum() / zi_group['is_new_drama'].sum() * 100) if zi_group['is_new_drama'].sum() > 0 else 0
@@ -1001,9 +1236,9 @@ if file_w1 and file_w2:
 
             st.markdown(f"""
             <div class="review-card">
-                <div class="review-item"><b>1. 自制剧 vs 采购剧过测率对比：</b> 本周自制新剧过测率为 <b>{zi_pass:.1f}%</b>，采购新剧过测率为 <b>{cai_pass:.1f}%</b>。</div>
-                <div class="review-item"><b>2. 新剧测试空耗归因：</b> 本周未过测新剧共耗资 <b>${waste_sp:,.2f}</b>，建议优化前3秒留存与开头素材。</div>
-                <div class="review-item"><b>3. 在投剧目与团队表现：</b> 头部优化师 KPI 稳步推进，老剧持续提供稳健大盘流水支撑。</div>
+                <div class="review-item"><b>1. 自制剧 vs 采购剧过测率对比：</b> 本周自制新剧过测率为 <b>{zi_pass:.1f}%</b>，采购新剧过测率为 <b>{cai_pass:.1f}%</b>。自制剧在题材贴合度及内容转化上表现更为稳定。</div>
+                <div class="review-item"><b>2. 新剧测试空耗归因：</b> 本周未过测新剧共耗资 <b>${waste_sp:,.2f}</b>。空耗主要集中在部分前 3 秒留存较低的品类，建议针对此类未过测剧集缩短测试周期或微调素材开头。</div>
+                <div class="review-item"><b>3. 在投剧目与团队表现：</b> 团队头部优化师花费贡献稳定，多位优化师 KPI 完成率超额达成；在投老剧整体达标率维持良好，持续提供稳健流水支撑。</div>
             </div>
             """, unsafe_allow_html=True)
 
